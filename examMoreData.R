@@ -2,6 +2,7 @@ library(dplyr)
 library(pracma)
 library(rstanarm)
 
+setwd("/Users/solonicolas/DSSC/NorthMexicoCovid-19")
 data <- read.csv("MexicoCovid19Updated.csv", header = T, sep = ",")
 population = read.csv("./population.csv",header=T)
 
@@ -74,3 +75,18 @@ points(data_daily$time, model1$fitted.values, type = "l", col = "red")
 
 #CI
 model1$stan_summary
+
+
+# train-test split 
+test_days = 20
+days <- as.integer(data$time[length(data$time)])
+training_set <- data[data$time<days-test_days,]
+test_set <- data[data$time>=days-test_days,]
+
+data_daily_train <- training_set %>%
+  group_by(time) %>%
+  summarize(daily_cases = n())
+
+data_daily_test <- test_set %>%
+  group_by(time) %>%
+  summarize(daily_cases = n())
