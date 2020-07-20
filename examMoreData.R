@@ -1,6 +1,7 @@
 library(dplyr)
 library(pracma)
 library(rstanarm)
+library(ggplot2)
 
 setwd("/Users/solonicolas/DSSC/NorthMexicoCovid-19")
 data <- read.csv("MexicoCovid19Updated.csv", header = T, sep = ",")
@@ -130,3 +131,147 @@ data_daily_test <- test_set %>%
   group_by(time) %>%
   summarize(daily_cases = n())
 
+
+
+################################################################################
+###################### DIVISION ################################################
+################################################################################
+
+# SEX
+
+female <- data %>%
+  group_by(Sex, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(Sex=="FEMININO")
+
+male  <- data %>%
+  group_by(Sex, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(Sex=="MASCULINO")
+
+plot(female$time, female$daily_cases, type = "l")
+points(male$time, male$daily_cases, type="l", col=2)
+
+# moving avg
+female$avg_cases <- movavg(female$daily_cases, n= 7, type="s")
+male$avg_cases <- movavg(male$daily_cases, n= 7, type="s")
+plot(female$time, female$avg_cases, type = "l")
+points(male$time, male$avg_cases, type="l", col=2)
+
+# REGIONS
+
+BajaCalifornia <- data %>%
+  group_by(Region, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(Region=="BAJA CALIFORNIA")
+
+Chihuahua <- data %>%
+  group_by(Region, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(Region=="CHIHUAHUA")
+
+Coahuila <- data %>%
+  group_by(Region, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(Region=="COAHUILA")
+
+Durango <- data %>%
+  group_by(Region, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(Region=="DURANGO")
+
+NuevoLeon <- data %>%
+  group_by(Region, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(Region=="NUEVO LEON")
+
+Sinaloa <- data %>%
+  group_by(Region, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(Region=="SINALOA")
+
+Sonora <- data %>%
+  group_by(Region, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(Region=="SONORA")
+
+Tamaulipas <- data %>%
+  group_by(Region, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(Region=="TAMAULIPAS")
+
+Zacatecas <- data %>%
+  group_by(Region, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(Region=="ZACATECAS")
+
+# plots
+plot(BajaCalifornia$time, BajaCalifornia$daily_cases, type = "l", ylim = c(0,1000))
+points(Chihuahua$time, Chihuahua$daily_cases, type="l", col=2)
+points(Coahuila$time, Coahuila$daily_cases, type="l", col=3)
+points(Durango$time, Durango$daily_cases, type="l", col=4)
+points(NuevoLeon$time, NuevoLeon$daily_cases, type="l", col=5)
+points(Sinaloa$time, Sinaloa$daily_cases, type="l", col=6)
+points(Sonora$time, Sonora$daily_cases, type="l", col=7)
+points(Tamaulipas$time, Tamaulipas$daily_cases, type="l", col=8)
+points(Zacatecas$time, Zacatecas$daily_cases, type="l", col=9)
+
+# moving avg
+BajaCalifornia$avg_cases <- movavg(BajaCalifornia$daily_cases, n= 7, type="s")
+Chihuahua$avg_cases <- movavg(Chihuahua$daily_cases, n= 7, type="s")
+Coahuila$avg_cases <- movavg(Coahuila$daily_cases, n= 7, type="s")
+Durango$avg_cases <- movavg(Durango$daily_cases, n= 7, type="s")
+NuevoLeon$avg_cases <- movavg(NuevoLeon$daily_cases, n= 7, type="s")
+Sinaloa$avg_cases <- movavg(Sinaloa$daily_cases, n= 7, type="s")
+Sonora$avg_cases <- movavg(Sonora$daily_cases, n= 7, type="s")
+Tamaulipas$avg_cases <- movavg(Tamaulipas$daily_cases, n= 7, type="s")
+Zacatecas$avg_cases <- movavg(Zacatecas$daily_cases, n= 7, type="s")
+
+# smooth plots
+plot(BajaCalifornia$time, BajaCalifornia$avg_cases, type = "l", ylim = c(0,800))
+points(Chihuahua$time, Chihuahua$avg_cases, type="l", col=2)
+points(Coahuila$time, Coahuila$avg_cases, type="l", col=3)
+points(Durango$time, Durango$avg_cases, type="l", col=4)
+points(NuevoLeon$time, NuevoLeon$avg_cases, type="l", col=5)
+points(Sinaloa$time, Sinaloa$avg_cases, type="l", col=6)
+points(Sonora$time, Sonora$avg_cases, type="l", col=7)
+points(Tamaulipas$time, Tamaulipas$avg_cases, type="l", col=8)
+points(Zacatecas$time, Zacatecas$avg_cases, type="l", col=9)
+
+# AGE
+
+young <- data %>%
+  group_by(age_class, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(age_class %in% c(0,1,2))%>%
+  group_by(time) %>%
+  summarize(daily_cases = sum(daily_cases))
+
+middle_age <- data %>%
+  group_by(age_class, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(age_class %in% c(3,4,5)) %>%
+  group_by(time) %>%
+  summarize(daily_cases = sum(daily_cases))
+
+old <-data %>%
+  group_by(age_class, time) %>%
+  summarize(daily_cases = n()) %>%
+  filter(age_class %in% c(6,7,8,9,10,11,12)) %>%
+  group_by(time) %>%
+  summarize(daily_cases = sum(daily_cases))
+
+# plots
+plot(young$time, young$daily_cases, type = "l", ylim = c(0,2500))
+points(middle_age$time, middle_age$daily_cases, type="l", col=2)
+points(old$time, old$daily_cases, type="l", col=3)
+
+# moving avg
+young$avg_cases <- movavg(young$daily_cases, n= 7, type="s")
+middle_age$avg_cases <- movavg(middle_age$daily_cases, n= 7, type="s")
+old$avg_cases <- movavg(old$daily_cases, n= 7, type="s")
+
+# smooth plots
+plot(young$time, young$avg_cases, type = "l", ylim = c(0,2100))
+points(middle_age$time, middle_age$avg_cases, type="l", col=2)
+points(old$time, old$avg_cases, type="l", col=3)
