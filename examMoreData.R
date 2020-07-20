@@ -1,4 +1,3 @@
-#A random 120 year old person appears, gratz mate!
 library(dplyr)
 library(readr)
 library(pracma)
@@ -7,7 +6,14 @@ library(rstanarm)
 ?read_csv
 data <- read.csv("MexicoCovid19Updated.csv", header = T, sep = ",")
 data$Date <- as.Date(data$Date,"%Y-%m-%d")
+
+#A random 120 year old person appears, gratz mate!
 max(data$Age)
+
+first_day_data <- min(data$Date)
+lockdown_start <- as.Date("2020-03-23")
+lockdown_end <- as.Date("2020-06-01")
+last_day_data <- max(data$Date)
 
 for (i in names){
   data$population[data$Region==i] <- population[population$Estado==i,2]
@@ -33,16 +39,15 @@ data_daily <- data %>%
   group_by(time) %>%
   summarize(daily_cases = n())
 
-head(data_daily)
-
-no_lock <- rep(0,82)
-yes_lock <- seq(1,70)
-no_lock_again <- rep(0,48)
+#Adding lockdown and post_lockdown columns
+no_lock <- rep(0,as.integer(lockdown_start - first_day_data))
+yes_lock <- seq(1,as.integer(lockdown_end - lockdown_start))
+no_lock_again <- rep(0,as.integer(last_day_data - lockdown_end)+1)
 lockdown <- c(no_lock, yes_lock, no_lock_again)
 data_daily$lockdown <- lockdown
 
-no_lock <- rep(0,152)
-post_lock <- seq(1,48)
+no_lock <- rep(0,as.integer(lockdown_end - first_day_data))
+post_lock <- seq(1,as.integer(last_day_data - lockdown_end)+1)
 post_lockdown <- c(no_lock, post_lock)
 data_daily$post_lockdown <- post_lockdown
 
@@ -51,7 +56,6 @@ plot(data_daily$time, data_daily$daily_cases, type = "l")
 
 #Moving averages make them smooth
 View(data_daily)
-?movavg
 data_daily$avg_cases <- movavg(data_daily$daily_cases, n= 7, type="s")
 plot(data_daily$time, data_daily$avg_cases, type = "l")
 
