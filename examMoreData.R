@@ -61,10 +61,15 @@ View(data_daily)
 data_daily$avg_cases <- movavg(data_daily$daily_cases, n= 7, type="s")
 plot(data_daily$time, data_daily$avg_cases, type = "l")
 
+################################################################################
+################### MODELS #####################################################
+################################################################################
 
-#First stan model
 data_daily$avg_cases <- as.integer(data_daily$avg_cases)
 data_daily$time <- as.integer(data_daily$time)
+
+#First stan model
+
 model1 <- stan_glm( avg_cases ~ time + I(time^2), family = poisson,  data=data_daily)
 
 model1
@@ -76,6 +81,39 @@ points(data_daily$time, model1$fitted.values, type = "l", col = "red")
 #CI
 model1$stan_summary
 
+# Not stan
+
+plot(data_daily$time, data_daily$avg_cases, type = "l")
+abline(v=c(82, 152), lty=2)
+
+# time
+model2 <- glm(avg_cases ~ time, family = poisson,  data=data_daily)
+model2
+points(data_daily$time, model2$fitted.values, type = "l", col = 2)
+
+# time^2
+model3 <- glm(avg_cases ~ time + I(time^2), family = poisson,  data=data_daily)
+model3
+points(data_daily$time, model3$fitted.values, type = "l", col = 3)
+
+# time^3
+model4 <- glm(avg_cases ~ time + I(time^2) + I(time^3), family = poisson,  data=data_daily)
+model4
+points(data_daily$time, model4$fitted.values, type = "l", col = 4)
+
+# exp(time) !!!!!!!!!!!!!!!!!!
+model5 <- glm(avg_cases ~ time + I(time^2) + I(exp(time)), family = poisson,  data=data_daily)
+model5
+points(data_daily$time, model5$fitted.values, type = "l", col = 5)
+
+# lockdown
+model6 <- glm(avg_cases ~ time +  I(time^2) + post_lockdown + lockdown, family = poisson,  data=data_daily)
+model6
+points(data_daily$time, model6$fitted.values, type = "l", col = 6)
+
+################################################################################
+################### TEST-TRAIN SPLIT ###########################################
+################################################################################
 
 # train-test split 
 test_days = 20
