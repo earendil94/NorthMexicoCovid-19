@@ -111,6 +111,7 @@ model6 <- glm(avg_cases ~ time +  I(time^2) + post_lockdown + lockdown, family =
 model6
 points(data_daily$time, model6$fitted.values, type = "l", col = 6)
 
+
 ################################################################################
 ################### TEST-TRAIN SPLIT ###########################################
 ################################################################################
@@ -128,3 +129,4 @@ data_daily_train <- training_set %>%
 data_daily_test <- test_set %>%
   group_by(time) %>%
   summarize(daily_cases = n())
+
