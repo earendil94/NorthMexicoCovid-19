@@ -1,10 +1,11 @@
 library(dplyr)
-library(readr)
 library(pracma)
 library(rstanarm)
 
-?read_csv
 data <- read.csv("MexicoCovid19Updated.csv", header = T, sep = ",")
+population = read.csv("./population.csv",header=T)
+
+names = c("BAJA CALIFORNIA","CHIHUAHUA","COAHUILA","DURANGO","NUEVO LEON","SINALOA","SONORA","TAMAULIPAS","ZACATECAS")
 data$Date <- as.Date(data$Date,"%Y-%m-%d")
 
 #A random 120 year old person appears, gratz mate!
