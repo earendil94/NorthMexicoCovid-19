@@ -2,6 +2,7 @@ library(dplyr)
 library(readr)
 library(pracma)
 library(rstanarm)
+library(loo)
 
 ?read_csv
 data <- read.csv("MexicoCovid19Updated.csv", header = T, sep = ",")
@@ -63,13 +64,20 @@ plot(data_daily$time, data_daily$avg_cases, type = "l")
 #First stan model
 data_daily$avg_cases <- as.integer(data_daily$avg_cases)
 data_daily$time <- as.integer(data_daily$time)
-model1 <- stan_glm( avg_cases ~ time + I(time^2), family = poisson,  data=data_daily)
 
-model1
+model_time_2 <- stan_glm( avg_cases ~ time + I(time^2), family = poisson,  data=data_daily)
 
-#Fit
+
+#We still need to understand this if we want to use it
+?loo
+
+#... But let's still use it
+loo_model_time_2 <- loo(model_time_2)
+loo_model_time_2$estimates[3,1] #This yields the LOOIC: the lowest the better
+
+#Plot of the fit in red
 plot(data_daily$time, data_daily$avg_cases, type = "l")
-points(data_daily$time, model1$fitted.values, type = "l", col = "red")
+points(data_daily$time, model_time_2$fitted.values, type = "l", col = "red")
 
 #CI
-model1$stan_summary
+model_time_2$stan_summary
