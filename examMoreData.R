@@ -5,6 +5,7 @@ library(readr)
 library(pracma)
 library(rstanarm)
 library(loo)
+library(Metrics)
 
 
 ##### CSV loading #####
@@ -39,7 +40,6 @@ data_daily <- data %>%
   summarize(daily_cases = n())
 
 
-
 ##### Adding lockdown and post_lockdown columns #####
 first_day_data <- min(data$Date)
 lockdown_start <- as.Date("2020-03-23")
@@ -61,7 +61,7 @@ data_daily$post_lockdown <- post_lockdown
 plot(data_daily$time, data_daily$daily_cases, type = "l")
 
 #Moving averages make them smooth
-View(data_daily)
+#View(data_daily)
 data_daily$avg_cases <- movavg(data_daily$daily_cases, n= 7, type="s")
 data_daily$avg_cases <- as.integer(data_daily$avg_cases)
 data_daily$time <- as.integer(data_daily$time)
@@ -69,36 +69,70 @@ plot(data_daily$time, data_daily$avg_cases, type = "l")
 
 ##### Train/Test split #####
 
-test_days = 20
-days <- as.integer(data$time[length(data$time)])
-training_set <- data[data$time<days-test_days,]
-test_set <- data[data$time>=days-test_days,]
-
-data_daily_train <- training_set %>%
-  group_by(time) %>%
-  summarize(daily_cases = n())
-
-data_daily_test <- test_set %>%
-  group_by(time) %>%
-  summarize(daily_cases = n())
+test_days = 5
+days <- as.integer(data_daily$time[length(data_daily$time)])
+training_set <- data_daily[data_daily$time<=days-test_days,]
+test_set <- data_daily[data_daily$time>days-test_days,]
 
 
 ##### Poisson regression #####
 
-model_time_2 <- stan_glm( avg_cases ~ time + I(time^2), family = poisson,  data=data_daily)
+loss <- function(model, test){
+  pred_model <- posterior_predict(model, newdata = test)
+  pred_0025 <- apply(pred_model, 2, function(x) quantile(x, 0.025))
+  pred_0975 <- apply(pred_model, 2, function(x) quantile(x, 0.975))
+  pred_model <- apply(pred_model, 2, mean)
+  plot(test$time, test$avg_cases, type="l")
+  points(test$time, pred_model, type="l", col="red")
+  lines(test$time, pred_0025, lty=2, col="red")
+  lines(test$time, pred_0975, lty=2, col="red")
+  return(mse(test$avg_cases, pred_model))
+}
 
-#We still need to understand this if we want to use it
-?loo
 
+#TODO: NEED TO FIGURE THIS OUT
+#?loo
 #... But let's still use it
-loo_model_time_2 <- loo(model_time_2)
-loo_model_time_2$estimates[3,1] #This yields the LOOIC: the lowest the better
+#loo_model_time_2 <- loo(model_time_2)
+#loo_model_time_2$estimates[3,1] #This yields the LOOIC: the lowest the better
 
 #Plot of the fit in red
-plot(data_daily$time, data_daily$avg_cases, type = "l")
-points(data_daily$time, model_time_2$fitted.values, type = "l", col = "red")
+#plot(data_daily$time, data_daily$avg_cases, type = "l")
+#points(data_daily$time, model_time_2$fitted.values, type = "l", col = "red")
 
 #CI
-model_time_2$stan_summary
+#model_time_2$stan_summary
 
 
+plot(data_daily$time, data_daily$avg_cases, type = "l")
+abline(v=c(82, 152), lty=2)
+
+# time
+model_time <- stan_glm(avg_cases ~ time, family = poisson,  data=training_set)
+loss(model_time, test_set)
+
+# time^2
+model_time_2 <- stan_glm( avg_cases ~ time + I(time^2), family = poisson,  data=training_set)
+loss(model_time_2, test_set)
+model_time_2$coefficients
+
+# time^3
+model_time_3 <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3), family = poisson,  data=training_set)
+loss(model_time_3, test_set)
+
+# exp(time) !!!!!!!!!!!!!!!!!!
+# 
+?stan_glm
+model_time_exp <- stan_glm(avg_cases ~ time + I(time^2) + I(exp(time)), family = poisson,  data=training_set)
+mse(test_set$avg_cases, predict.glm(model_time_exp, newdata = test_set, type = "response"))
+test_set$avg_cases
+plot(training_set$time, training_set$avg_cases, type="l")
+points(training_set$time, model_time_exp$fitted.values, type="l", col="red")
+points(test_set$time, predict(model_time_exp, newdata = test_set, type="response"), type="l", col="red")
+loss(model_time_exp, test_set)
+
+# lockdown
+model_time_lock <- stan_glm(avg_cases ~ time +  I(time^2) + post_lockdown + lockdown, family = poisson,  data=training_set)
+loss(model_time_lock, test_set)
+
+### time to try new stuff
