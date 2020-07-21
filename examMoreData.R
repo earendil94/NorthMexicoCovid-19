@@ -280,3 +280,74 @@ old$avg_cases <- movavg(old$daily_cases, n= 7, type="s")
 plot(young$time, young$avg_cases, type = "l", ylim = c(0,2100))
 points(middle_age$time, middle_age$avg_cases, type="l", col=2)
 points(old$time, old$avg_cases, type="l", col=3)
+
+
+#############
+### ARIMA ###
+#############
+
+data_ts <- ts(data_daily$daily_cases)
+plot(data_ts)
+
+
+# remove weekly seasonality with moving avg
+library(TTR)
+library(forecast)
+
+data_ts <- SMA(data_ts,n=7)
+plot(data_ts,type="l")
+
+#2 ways to remove trend : subtract or differentiate
+#1
+detrend1 <- data_ts - mod1$fitted.values[7:199]
+par(mfrow=c(1,2))
+plot(detrend1,type="l")
+#2
+detrend2 <- diff(data_ts[7:199],diff=2)
+plot(detrend2,type="l")
+par(mfrow=c(1,1))
+
+# now to choose the model look at acf and pacf
+acf(detrend1)
+pacf(detrend1)
+# seems an AR(2) -> ARIMA(2,1,0)
+
+#but trying to use auto selection
+#model <- auto.arima(data_ts,trace=TRUE)
+#summary(model)
+
+model <- arima(data_ts,order=c(2,1,0))
+
+#predictions
+predictions = forecast(model, n=30, level = c(80, 95))
+plot(predictions)
+
+
+############################
+### LOGISTIC OR GOMPERTZ ###
+###  ON CUMULATIVE DATA  ###
+############################
+
+data_daily$cumulative = cumsum(data_daily$daily_cases)
+plot(data_daily$cumulative,type="l")
+
+#fit a logistic function using non linear least squares approximation
+logistic_model <- nls(cumulative~ SSlogis(time, Asym, xmid, scal), data=data_daily)
+coeff <- coef(logistic_model)
+x <- 1:400
+plot(x,SSlogis(x,coeff[1],coeff[2],coeff[3]),type="l")
+points(data_daily$time,data_daily$cumulative,col=2,pch=20)
+
+# but I want cases to decrease slower
+gomp <- function(data,alpha,beta,k){
+  return(alpha*exp(-beta*exp(-k*data)))
+}
+plot(x,gomp(x,300000,188,0.03),type="l")
+points(data_daily$time,data_daily$cumulative,col=2,pch=20)
+
+gomp_model <- nls(cumulative~ SSgompertz(time,alpha, beta, k), data=data_daily)
+coeff <- coef(gomp_model)
+coeff 
+plot(x,SSgompertz(x,coeff[1],coeff[2],coeff[3]),type="l")
+points(data_daily$time,data_daily$cumulative,col=2,pch=20)
+
