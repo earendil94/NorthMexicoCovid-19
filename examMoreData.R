@@ -6,6 +6,8 @@ library(pracma)
 library(rstanarm)
 library(loo)
 library(Metrics)
+library(earth)
+library(mgcv)
 
 
 ##### CSV loading #####
@@ -39,7 +41,6 @@ data_daily <- data %>%
   group_by(time) %>%
   summarize(daily_cases = n())
 
-
 ##### Adding lockdown and post_lockdown columns #####
 first_day_data <- min(data$Date)
 lockdown_start <- as.Date("2020-03-23")
@@ -67,13 +68,19 @@ data_daily$avg_cases <- as.integer(data_daily$avg_cases)
 data_daily$time <- as.integer(data_daily$time)
 plot(data_daily$time, data_daily$avg_cases, type = "l")
 
+lag1 <- c(NA, data_daily$avg_cases[1:199])
+lag2 <- c(NA, NA, data_daily$avg_cases[1:198])
+data_daily$lag1 <- lag1 
+data_daily$lag2 <- lag2
+
 ##### Train/Test split #####
 
-test_days = 5
+test_days = 10
 days <- as.integer(data_daily$time[length(data_daily$time)])
 training_set <- data_daily[data_daily$time<=days-test_days,]
 test_set <- data_daily[data_daily$time>days-test_days,]
-
+training_set <- training_set[3:dim(training_set)[1],]
+dim(training_set)
 
 ##### Poisson regression #####
 
@@ -112,12 +119,11 @@ model_time <- stan_glm(avg_cases ~ time, family = poisson,  data=training_set)
 loss(model_time, test_set)
 
 # time^2
-model_time_2 <- stan_glm( avg_cases ~ time + I(time^2), family = poisson,  data=training_set)
+model_time_2 <- stan_glm( avg_cases ~ time + I(time^2) + lag2, family = poisson,  data=training_set)
 loss(model_time_2, test_set)
-model_time_2$coefficients
 
 # time^3
-model_time_3 <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3), family = poisson,  data=training_set)
+model_time_3 <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3) + lag2, family = poisson,  data=training_set)
 loss(model_time_3, test_set)
 
 # exp(time) !!!!!!!!!!!!!!!!!!
@@ -135,7 +141,26 @@ loss(model_time_exp, test_set)
 model_time_lock <- stan_glm(avg_cases ~ time +  I(time^2) + post_lockdown + lockdown, family = poisson,  data=training_set)
 loss(model_time_lock, test_set)
 
-### time to try new stuff
+##### EXPERIMENTS ######
+
+##### GAM ######
+
+#boh boh
+model_gam <- gam(avg_cases ~  lag2 + s(time), method="REML", family = poisson(), data = training_set)
+pred <- predict(model_gam, newdata = test_set, type = "response")
+plot(data_daily$time[180:200], data_daily$avg_cases[180:200], type= "l")
+points(test_set$time, pred, type = "l", col = "red")
+summary(model_gam)
+gam.check(model_gam)
+mse(test_set$avg_cases, pred)
+
+##### MARS
+mars <- earth(avg_cases ~ time + lag2, data = training_set, nk=5)
+pred <- predict(mars, newdata = test_set, type = "response")
+plot(data_daily$time[180:200], data_daily$avg_cases[180:200], type= "l")
+points(test_set$time, pred, type = "l", col = "red")
+mse(test_set$avg_cases, pred)
+
 
 ################################################################################
 ###################### DIVISION ################################################
