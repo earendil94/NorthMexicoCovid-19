@@ -6,6 +6,8 @@ library(pracma)
 library(rstanarm)
 library(loo)
 library(Metrics)
+library(mgcv)
+library(earth)
 
 
 ##### CSV loading #####
@@ -128,7 +130,7 @@ loss(model_time_exp, test_set)
 
 # lockdown
 model_time_lock <- stan_glm(avg_cases ~ time +  I(time^2) + post_lockdown + lockdown, family = poisson,  data=training_set)
-loss(model_time_lock, test_set)
+loss_stan(model_time_lock, test_set)
 
 ### time to try new stuff
 
