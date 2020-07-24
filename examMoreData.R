@@ -71,6 +71,12 @@ data_daily$avg_cases <- as.integer(data_daily$avg_cases)
 data_daily$time <- as.integer(data_daily$time)
 plot(data_daily$time, data_daily$avg_cases, type = "l")
 
+
+lag1 <- c(NA, data_daily$avg_cases[1:199])
+lag2 <- c(NA, NA, data_daily$avg_cases[1:198])
+data_daily$lag1 <- lag1 
+data_daily$lag2 <- lag2
+
 ##### Train/Test split #####
 test_days = 5
 days <- as.integer(data_daily$time[length(data_daily$time)])
