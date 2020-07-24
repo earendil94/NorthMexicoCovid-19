@@ -77,9 +77,12 @@ lag2 <- c(NA, NA, data_daily$avg_cases[1:198])
 data_daily$lag1 <- lag1 
 data_daily$lag2 <- lag2
 
+# cumulative data
+data_daily$cumulative = cumsum(data_daily$daily_cases)
+
 ##### Train/Test split #####
 test_days = 5
-days <- as.integer(data_daily$time[length(data_daily$time)])
+days <- as.integer(length(data_daily$time))
 training_set <- data_daily[data_daily$time<=days-test_days,]
 test_set <- data_daily[data_daily$time>days-test_days,]
 
@@ -119,16 +122,16 @@ abline(v=c(82, 152), lty=2)
 ##### Poisson Regression #####
 
 # time
-model_time <- stan_glm(avg_cases ~ time, family = poisson,  data=training_set)
+model_time <- stan_glm(avg_cases ~ time + lag2, family = poisson,  data=training_set)
 loss_stan(model_time, test_set)
 
 # time^2
-model_time_2 <- stan_glm( avg_cases ~ time + I(time^2), family = poisson,  data=training_set)
+model_time_2 <- stan_glm( avg_cases ~ time + I(time^2) + lag2, family = poisson,  data=training_set)
 loss_stan(model_time_2, test_set)
 
 # time^3
-model_time_3 <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3), family = poisson,  data=training_set)
-loss_stan(model_time_3, test_set)
+model_time_3 <- glm(avg_cases ~ time + I(time^2) + I(time^3), family = poisson,  data=training_set)
+loss(model_time_3, test_set)
 
 # exp(time) !!!!!!
 model_time_exp <- glm(avg_cases ~ time + I(time^2) + I(exp(time)), family = poisson,  data=training_set)
@@ -145,10 +148,9 @@ loss_stan(model_time_lock, test_set)
 #boh boh
 model_gam <- gam(avg_cases ~  lag2 + s(time), method="REML", family = poisson(), data = training_set)
 pred <- predict(model_gam, newdata = test_set, type = "response")
-plot(data_daily$time[180:200], data_daily$avg_cases[180:200], type= "l")
+plot(test_set$time, test_set$avg_cases, type= "l")
 points(test_set$time, pred, type = "l", col = "red")
 summary(model_gam)
-gam.check(model_gam)
 mse(test_set$avg_cases, pred)
 
 ##### MARS
@@ -319,7 +321,7 @@ plot(data_ts,type="l")
 
 #2 ways to remove trend : subtract or differentiate
 #1
-detrend1 <- data_ts - model_time_2$fitted.values[7:199]
+detrend1 <- data_ts[7:199] - model_time_2$fitted.values[7:199]
 par(mfrow=c(1,2))
 plot(detrend1,type="l")
 
@@ -337,24 +339,33 @@ pacf(detrend2)
 #model <- auto.arima(data_ts,trace=TRUE)
 #summary(model)
 
-model <- arima(data_ts, order=c(2,1,0))
+##### Train/Test split for ARIMA #####
+training_set_arima <- data_ts[1:(days-test_days)]
+test_set_arima <- data_ts[(days-test_days+1):days]
+
+model <- arima(training_set_arima, order=c(2,1,0))
 
 #predictions
-predictions = forecast(model, n=30, level = c(80, 95))
+predictions = forecast(model, h=length(test_set_arima), n=30, level = c(80, 95))
 plot(predictions)
+plot(test_set_arima, type= "l")
+points(predictions$mean, type = "l", col = "red")
+mse(test_set_arima,predictions$mean)
 
 
 ##### LOGISTIC OR GOMPERTZ ON CUMULATIVE DATA  #####
-
-data_daily$cumulative = cumsum(data_daily$daily_cases)
 plot(data_daily$cumulative,type="l")
 
 # fit a logistic function using non linear least squares approximation
-logistic_model <- nls(cumulative ~ SSlogis(time, Asym, xmid, scal), data=data_daily)
+logistic_model <- nls(cumulative ~ SSlogis(time, Asym, xmid, scal), data=training_set)
 coeff <- coef(logistic_model)
 x <- 1:400
 plot(x,SSlogis(x,coeff[1],coeff[2],coeff[3]),type="l")
-points(data_daily$time,data_daily$cumulative,col=2,pch=20)
+points(test_set$time,test_set$cumulative,col=2,pch=20)
+
+plot(test_set$time, test_set$cumulative, type= "l")
+points(SSlogis(test_set$time,coeff[1],coeff[2],coeff[3]), type = "l", col = "red")
+mse(test_set$cumulative,SSlogis(test_set$time,coeff[1],coeff[2],coeff[3]))
 
 # but I want cases to decrease slower
 gomp <- function(data,alpha,beta,k){
@@ -363,8 +374,23 @@ gomp <- function(data,alpha,beta,k){
 plot(x,gomp(x,300000,188,0.03),type="l")
 points(data_daily$time,data_daily$cumulative,col=2,pch=20)
 
-gomp_model <- nls(cumulative ~ SSgompertz(time,alpha, beta, k), data=data_daily)
+gomp_model <- nls(cumulative ~ SSgompertz(time,alpha, beta, k), data=training_set)
 coeff <- coef(gomp_model)
 coeff 
 plot(x,SSgompertz(x,coeff[1],coeff[2],coeff[3]),type="l")
 points(data_daily$time,data_daily$cumulative,col=2,pch=20)
+
+plot(test_set$time, test_set$cumulative, type= "l")
+points(SSgompertz(test_set$time,coeff[1],coeff[2],coeff[3]), type = "l", col = "red")
+mse(test_set$cumulative,SSgompertz(test_set$time,coeff[1],coeff[2],coeff[3]))
+
+
+#### GAM ON CUMULATIVE DATA ##### 
+
+#boh boh
+model_gam_cumul <- gam(avg_cases ~  lag2 + s(time), method="REML", family = poisson(), data = training_set)
+pred <- predict(model_gam, newdata = test_set, type = "response")
+plot(test_set$time, test_set$avg_cases, type= "l")
+points(test_set$time, pred, type = "l", col = "red")
+summary(model_gam)
+mse(test_set$avg_cases, pred)
