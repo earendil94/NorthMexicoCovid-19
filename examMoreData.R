@@ -99,6 +99,62 @@ loss_stan <- function(model, test){
   return(mse(test$avg_cases, pred_mean))
 }
 
+# bayesian + updating lag
+loss_stan_lag <- function(model, test){
+  df <- test
+  pred_model <- posterior_predict(model, newdata = df[1,])
+  pred_mean <- apply(pred_model, 2, mean)
+  pred_0025 <- apply(pred_model, 2, function(x) quantile(x, 0.025))
+  pred_0975 <- apply(pred_model, 2, function(x) quantile(x, 0.975))
+  ms <- mse(as.double(df[1,"avg_cases"]), pred_mean)
+  
+  pred <- pred_mean
+  pred_low <- pred_0025
+  pred_high <- pred_0975
+
+  df[1, "avg_cases"] <- pred_mean
+
+  #If we are just predicting one day then we are done
+  if (dim(df)[1] == 1){
+    return(ms)
+  }
+  
+  #Yes, I know having not one but two nested loops is bad in R
+  #But look, there will not be that many iterations, we are dealing
+  #With short predictions here
+  for (i in 2:dim(df)[1]){
+    pred_model <- posterior_predict(model, newdata = df[i,])
+    
+    pred_mean <- apply(pred_model, 2, mean)
+    pred_0025 <- apply(pred_model, 2, function(x) quantile(x, 0.025))
+    pred_0975 <- apply(pred_model, 2, function(x) quantile(x, 0.975))
+    
+    pred <- c(pred, pred_mean)
+    pred_low <- c(pred_low, pred_0025)
+    pred_high <- c(pred_high, pred_0975)
+    
+    ms <- ms + mse(as.double(df[i,"avg_cases"]), pred_mean)
+    df[i, "avg_cases"] <- pred_mean
+    df[i, "lag1"] <- df[i-1, "avg_cases"]
+    #Need to update each lag column
+    for (k in 2:i){
+      col <- paste("lag",k,sep="")
+      col_prev <- paste("lag",k-1, sep="")
+      df[i, col] <- df[i-1, col_prev]
+    }
+  }
+  
+  plot(test$time, test$avg_cases, type="l")
+  points(test$time, pred, type="l", col="red")
+  lines(test$time, pred_low, lty=2, col="red")
+  lines(test$time, pred_high, lty=2, col="red")
+
+  return(ms)
+}
+
+as.double(test_set[1,"avg_cases"])
+test_set[1,"avg_cases"]
+
 # frequentist
 loss <- function(model, test){
   pred <- predict(model, newdata = test, type = "response")
@@ -138,7 +194,9 @@ loss(model_time_exp, test_set)
 model_time_lock <- stan_glm(avg_cases ~ time +  I(time^2) + post_lockdown + lockdown, family = poisson,  data=training_set)
 loss_stan(model_time_lock, test_set)
 
-### time to try new stuff
+# lockdown with lag and updated predictions
+model_time_lock <- stan_glm(avg_cases ~ time +  I(time^2) + post_lockdown + lockdown, family = poisson,  data=training_set )
+loss_stan_lag(model_time_lock, test_set)
 
 ##### GAM ######
 
