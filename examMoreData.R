@@ -8,6 +8,7 @@ library(loo)
 library(Metrics)
 library(mgcv)
 library(earth)
+library(ggplot2)
 
 
 ##### CSV loading #####
@@ -94,10 +95,28 @@ loss_stan <- function(model, test){
   pred_0025 <- apply(pred_model, 2, function(x) quantile(x, 0.025))
   pred_0975 <- apply(pred_model, 2, function(x) quantile(x, 0.975))
   pred_mean <- apply(pred_model, 2, mean)
-  plot(test$time, test$avg_cases, type="l")
-  points(test$time, pred_mean, type="l", col="red")
-  lines(test$time, pred_0025, lty=2, col="red")
-  lines(test$time, pred_0975, lty=2, col="red")
+  
+  new_df <- data.frame(cbind(time = data_daily$time[196:200],
+                             pred_mean, pred_0025, pred_0975))
+  plot <- ggplot() +
+    geom_line(data = data_daily[191:200,], aes(x=time, y=avg_cases),
+              col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
+    geom_line(data = new_df, 
+              aes(x=time,y=pred_mean),
+              col="orange",
+              lwd=0.8) +
+    geom_point(data = data_daily[191:200,], aes(x=time, y=avg_cases),
+               col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
+    geom_point(data = new_df, 
+               aes(x=time,y=pred_mean),
+               col="orange") +
+    geom_ribbon(data = new_df, 
+                aes(x=time,ymin=pred_0025, ymax=pred_0975), alpha=0.2,
+                fill = "orange") +
+    theme_classic() +
+    ggtitle(model$call)  
+  
+  print(plot)
   return(mse(test$avg_cases, pred_mean))
 }
 
@@ -105,14 +124,14 @@ loss_stan <- function(model, test){
 loss_stan_lag <- function(model, test){
   df <- test
   pred_model <- posterior_predict(model, newdata = df[1,])
-  pred_mean <- apply(pred_model, 2, mean)
-  pred_0025 <- apply(pred_model, 2, function(x) quantile(x, 0.025))
-  pred_0975 <- apply(pred_model, 2, function(x) quantile(x, 0.975))
-  ms <- mse(as.double(df[1,"avg_cases"]), pred_mean)
+  pred <- apply(pred_model, 2, mean)
+  pred_low <- apply(pred_model, 2, function(x) quantile(x, 0.025))
+  pred_high <- apply(pred_model, 2, function(x) quantile(x, 0.975))
+  ms <- mse(as.double(df[1,"avg_cases"]), pred)
   
-  pred <- pred_mean
-  pred_low <- pred_0025
-  pred_high <- pred_0975
+  pred_mean <- pred
+  pred_0025 <- pred_low
+  pred_0975 <- pred_high
 
   df[1, "avg_cases"] <- pred_mean
 
@@ -134,40 +153,87 @@ loss_stan_lag <- function(model, test){
     }
     pred_model <- posterior_predict(model, newdata = df[i,])
     
-    pred_mean <- apply(pred_model, 2, mean)
-    pred_0025 <- apply(pred_model, 2, function(x) quantile(x, 0.025))
-    pred_0975 <- apply(pred_model, 2, function(x) quantile(x, 0.975))
+    pred <- apply(pred_model, 2, mean)
+    pred_low <- apply(pred_model, 2, function(x) quantile(x, 0.025))
+    pred_high <- apply(pred_model, 2, function(x) quantile(x, 0.975))
     
-    pred <- c(pred, pred_mean)
-    pred_low <- c(pred_low, pred_0025)
-    pred_high <- c(pred_high, pred_0975)
+    pred_mean <- c(pred_mean, pred)
+    pred_0025 <- c(pred_0025, pred_low)
+    pred_0975 <- c(pred_0975, pred_high)
     
-    ms <- ms + mse(as.double(df[i,"avg_cases"]), pred_mean)
-    df[i, "avg_cases"] <- pred_mean
+    ms <- ms + mse(as.double(df[i,"avg_cases"]), pred)
+    df[i, "avg_cases"] <- pred
 
   }
   
-  plot(test$time, test$avg_cases, type="l")
-  points(test$time, pred, type="l", col="red")
-  lines(test$time, pred_low, lty=2, col="red")
-  lines(test$time, pred_high, lty=2, col="red")
+  new_df <- data.frame(cbind(time = data_daily$time[196:200],
+                             pred_mean, pred_0025, pred_0975))
+  plot <- ggplot() +
+    geom_line(data = data_daily[191:200,], aes(x=time, y=avg_cases),
+              col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
+    geom_line(data = new_df, 
+              aes(x=time,y=pred_mean),
+              col="orange",
+              lwd=0.8) +
+    geom_point(data = data_daily[191:200,], aes(x=time, y=avg_cases),
+               col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
+    geom_point(data = new_df, 
+               aes(x=time,y=pred_mean),
+               col="orange") +
+    geom_ribbon(data = new_df, 
+                aes(x=time,ymin=pred_0025, ymax=pred_0975), alpha=0.2,
+                fill = "orange") +
+    theme_classic() +
+    ggtitle(model$call)  
+  
+  print(plot)
 
   return(ms/length(pred))
 }
 
+
 # frequentist
 loss <- function(model, test){
-  pred <- predict(model, newdata = test, type = "response")
-  plot(test$time, test$avg_cases, type="l")
-  points(test$time, pred, type="l", col="red")
-  return(mse(test$avg_cases, pred))
+  pred <- predict(model, newdata = test, type = "response", se.fit = TRUE)
+  pred_mean <- pred$fit
+  pred_0025 <- pred$fit - 2*pred$se.fit
+  pred_0975 <- pred$fit + 2*pred$se.fit
+  
+  new_df <- data.frame(cbind(time = data_daily$time[196:200],
+                             pred_mean, pred_0025, pred_0975))
+  plot <- ggplot() +
+    geom_line(data = data_daily[191:200,], aes(x=time, y=avg_cases),
+              col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
+    geom_line(data = new_df, 
+              aes(x=time,y=pred_mean),
+              col="orange",
+              lwd=0.8) +
+    geom_point(data = data_daily[191:200,], aes(x=time, y=avg_cases),
+               col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
+    geom_point(data = new_df, 
+               aes(x=time,y=pred_mean),
+               col="orange") +
+    geom_ribbon(data = new_df, 
+                aes(x=time,ymin=pred_0025, ymax=pred_0975), alpha=0.2,
+                fill = "orange") +
+    theme_classic() +
+    ggtitle(model$call)  
+  
+  print(plot)
+  return(mse(test$avg_cases, pred_mean))
 }
+
 
 loss_lag <- function(model, test){
   df <- test
-  pred_model <- predict(model, newdata = df[1,], type="response")
+  predictions <- predict(model, newdata = df[1,], type="response", se.fit = TRUE,
+                         interval = "pint")
+  View(predictions)  
+  pred_model <- predictions$fit
   ms <- mse(as.double(df[1,"avg_cases"]), pred_model)
-  pred <- pred_model
+  pred_mean <- pred_model
+  pred_0025 <- pred_mean - 2*predictions$se.fit
+  pred_0975 <- pred_mean + 2*predictions$se.fit
   
   df[1, "avg_cases"] <- pred_model
   
@@ -188,25 +254,43 @@ loss_lag <- function(model, test){
       df[i, col] <- df[i-1, col_prev]
     }
     
-    pred_model <- predict(model, newdata = df[1,], type="response")
-    pred <- c(pred, pred_model)
+    predictions <- predict(model, newdata = df[i,], type="response", se.fit = TRUE,
+                           interval = "se")
+    pred_model <- predictions$fit
+    pred_mean <- c(pred_mean, pred_model)
+    pred_0025 <- c(pred_0025, pred_model - 2*predictions$se.fit)
+    pred_0975 <- c(pred_0975, pred_model + 2*predictions$se.fit)
     
     ms <- ms + mse(as.double(df[i,"avg_cases"]), pred_model)
     df[i, "avg_cases"] <- pred_model
     
   }
   
-  plot(test$time, test$avg_cases, type="l")
-  points(test$time, pred, type="l", col="red")
+  new_df <- data.frame(cbind(time = data_daily$time[196:200],
+                             pred_mean, pred_0025, pred_0975))
+  plot <- ggplot() +
+    geom_line(data = data_daily[191:200,], aes(x=time, y=avg_cases),
+              col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
+    geom_line(data = new_df, 
+              aes(x=time,y=pred_mean),
+              col="orange",
+              lwd=0.8) +
+    geom_point(data = data_daily[191:200,], aes(x=time, y=avg_cases),
+               col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
+    geom_point(data = new_df, 
+               aes(x=time,y=pred_mean),
+               col="orange") +
+    geom_ribbon(data = new_df, 
+                aes(x=time,ymin=pred_0025, ymax=pred_0975), alpha=0.2,
+                fill = "orange") +
+    theme_classic() +
+    ggtitle(model$call)  
+  
+  print(plot)
 
   return(ms/length(pred)) 
 }
 
-#TODO: NEED TO FIGURE THIS OUT
-#?loo
-#... But let's still use it
-#loo_model_time_2 <- loo(model_time_2)
-#loo_model_time_2$estimates[3,1] #This yields the LOOIC: the lowest the better
 
 plot(data_daily$time, data_daily$avg_cases, type = "l")
 abline(v=c(82, 152), lty=2)
@@ -264,14 +348,20 @@ loss(model_gam, test_set) #25846
 loss_lag(model_gam, test_set) #95120: peggiora notevolmente, non capisco bene perché
 
 
+
 ##### MARS
-training_set_3 <- training_set[3:dim(training_set)[1],]
 ?earth
-mars <- earth(avg_cases ~ time + lag2, data = training_set_3)
+training_set_3 <- training_set[3:dim(training_set)[1],]
+mars <- earth(avg_cases ~ time + lag2, data = training_set_3, varmod.method = "power",
+              nfold = 5, ncross = 30)
+
+mars$rss
+?predict.earth
+loss_lag(mars, test_set)
 pred <- predict(mars, newdata = test_set, type = "response")
-plot(data_daily$time[180:200], data_daily$avg_cases[180:200], type= "l")
+plot(data_daily$time[190:200], data_daily$avg_cases[190:200], type= "l")
 points(test_set$time, pred, type = "l", col = "red")
-mse(test_set$avg_cases, pred) #54347
+ mse(test_set$avg_cases, pred) #54347
 loss_lag(mars, test_set)
 ################################################################################
 ###################### DIVISION ################################################
@@ -377,6 +467,13 @@ points(Sinaloa$time, Sinaloa$avg_cases, type="l", col=6)
 points(Sonora$time, Sonora$avg_cases, type="l", col=7)
 points(Tamaulipas$time, Tamaulipas$avg_cases, type="l", col=8)
 points(Zacatecas$time, Zacatecas$avg_cases, type="l", col=9)
+
+
+##################################################
+####### Models for the three biggest regions #####
+##################################################
+
+###### Nuevo Leon
 
 # AGE
 
