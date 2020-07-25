@@ -56,8 +56,8 @@ data %>%
   ggplot(aes(x=Region, y=n)) +
   geom_bar(stat = "identity", width = 1, aes(fill = Region)) +
   geom_text(aes(label=n), vjust=1.6, color="white", size=4)+
-  thema_classic()+
-  theme(axis.text.x = element_text(angle=30))
+  theme_classic()+
+  theme(axis.text.x = element_text(vjust = 0.6, angle=30))
 
 # Daily data
 data_daily <- data %>%
@@ -87,7 +87,7 @@ data_daily$post_lockdown <- post_lockdown
 data_daily %>%
   ggplot(aes(x=time, y=daily_cases))+
   geom_line()+
-  thema_classic()
+  theme_classic()
 
 # Moving averages make them smooth
 data_daily$avg_cases <- movavg(data_daily$daily_cases, n= 7, type="s")
@@ -97,7 +97,7 @@ data_daily$time <- as.integer(data_daily$time)
 data_daily %>%
   ggplot(aes(x=time, y=avg_cases))+
   geom_line()+
-  thema_classic()
+  theme_classic()
 
 
 lag1 <- c(NA, data_daily$avg_cases[1:199])
@@ -255,13 +255,11 @@ loss_lag <- function(model, test){
   df <- test
   predictions <- predict(model, newdata = df[1,], type="response", se.fit = TRUE,
                          interval = "pint")
-  View(predictions)  
-  pred_model <- predictions$fit
+  pred_model <- as.integer(predictions$fit)
   ms <- mse(as.double(df[1,"avg_cases"]), pred_model)
   pred_mean <- pred_model
   pred_0025 <- pred_mean - 2*predictions$se.fit
   pred_0975 <- pred_mean + 2*predictions$se.fit
-  
   df[1, "avg_cases"] <- pred_model
   
   #If we are just predicting one day then we are done
@@ -283,7 +281,7 @@ loss_lag <- function(model, test){
     
     predictions <- predict(model, newdata = df[i,], type="response", se.fit = TRUE,
                            interval = "se")
-    pred_model <- predictions$fit
+    pred_model <- as.integer(predictions$fit)
     pred_mean <- c(pred_mean, pred_model)
     pred_0025 <- c(pred_0025, pred_model - 2*predictions$se.fit)
     pred_0975 <- c(pred_0975, pred_model + 2*predictions$se.fit)
@@ -315,7 +313,7 @@ loss_lag <- function(model, test){
   
   print(plot)
 
-  return(ms/length(pred)) 
+  return(ms/length(pred_mean)) 
 }
 
 
@@ -374,8 +372,6 @@ model_gam <- gam(avg_cases ~  s(time) + lag2, method="REML", family = poisson(),
 loss(model_gam, test_set) #25846
 loss_lag(model_gam, test_set) #95120: peggiora notevolmente, non capisco bene perch�
 
-
-
 ##### MARS
 ?earth
 training_set_3 <- training_set[3:dim(training_set)[1],]
@@ -390,6 +386,8 @@ plot(data_daily$time[190:200], data_daily$avg_cases[190:200], type= "l")
 points(test_set$time, pred, type = "l", col = "red")
  mse(test_set$avg_cases, pred) #54347
 loss_lag(mars, test_set)
+
+
 ################################################################################
 ###################### DIVISION ################################################
 ################################################################################
@@ -598,9 +596,15 @@ plot(data_daily$cumulative,type="l")
 logistic_model <- nls(cumulative ~ SSlogis(time, Asym, xmid, scal), data=training_set)
 coeff <- coef(logistic_model)
 x <- 1:400
-plot(x,SSlogis(x,coeff[1],coeff[2],coeff[3]),type="l")
-points(data_daily$time, data_daily$cumulative, col=3, pch=1)
-points(test_set$time,test_set$cumulative,col=2,pch=20)
+#plot(x,SSlogis(x,coeff[1],coeff[2],coeff[3]),type="l")
+#points(data_daily$time, data_daily$cumulative, col=3, pch=1)
+#points(test_set$time,test_set$cumulative,col=2,pch=20)
+df <- data.frame(cbind(time = x, cumulative = SSlogis(x,coeff[1],coeff[2],coeff[3])))
+ggplot()+
+  geom_line(data = df, aes(x = time, y=cumulative))+
+  geom_point(data = data_daily, aes(x = time, y=cumulative), col = 3, pch =1) +
+  geom_point(data = test_set, aes(x =time, y= cumulative), col = 2) +
+  theme_classic()
 
 #Desumming
 desum <- function(model, coeffs, test, training){
@@ -631,14 +635,27 @@ points(data_daily$time,data_daily$cumulative,col=2,pch=20)
 gomp_model <- nls(cumulative ~ SSgompertz(time,alpha, beta, k), data=training_set)
 coeff <- coef(gomp_model)
 coeff 
-plot(x,SSgompertz(x,coeff[1],coeff[2],coeff[3]),type="l")
-points(data_daily$time,data_daily$cumulative,col=2,pch=20)
+#plot(x,SSgompertz(x,coeff[1],coeff[2],coeff[3]),type="l")
+#points(data_daily$time,data_daily$cumulative,col=2,pch=20)
+df = data.frame(cbind(time = x, cumulative = SSgompertz(x,coeff[1],coeff[2],coeff[3])))
+ggplot()+
+  geom_line(data = df, aes(x = time, y=cumulative))+
+  geom_point(data = data_daily, aes(x = time, y=cumulative), col = 3, pch =1) +
+  geom_point(data = test_set, aes(x =time, y= cumulative), col = 2) +
+  theme_classic()
 
-plot(test_set$time, test_set$cumulative, type= "l")
-points(test_set$time,SSgompertz(test_set$time,coeff[1],coeff[2],coeff[3]), type = "l", col = "red")
+#plot(test_set$time, test_set$cumulative, type= "l")
+#points(test_set$time,SSgompertz(test_set$time,coeff[1],coeff[2],coeff[3]), type = "l", col = "red")
+ggplot()+
+  geom_line(data = test_set, aes(x = time, y=SSgompertz(time,coeff[1],coeff[2],coeff[3])), col = 3) +
+  geom_line(data = test_set, aes(x =time, y= cumulative), col = 2) +
+  geom_point(data = test_set, aes(x = time, y=SSgompertz(time,coeff[1],coeff[2],coeff[3])), col = 3, pch =1) +
+  geom_point(data = test_set, aes(x =time, y= cumulative), col = 2) +
+  theme_classic()
 mse(test_set$cumulative,SSgompertz(test_set$time,coeff[1],coeff[2],coeff[3]))
 
 desum(SSgompertz, coeff, test_set, training_set) #457k
+
 #### GAM ON CUMULATIVE DATA ##### 
 
 #boh boh
