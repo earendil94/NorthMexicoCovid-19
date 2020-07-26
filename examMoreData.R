@@ -1,7 +1,6 @@
 ##### Libraries #####
 
 library(dplyr)
-library(tidyr)
 library(readr)
 library(pracma)
 library(rstanarm)
@@ -28,18 +27,37 @@ max(data$Age)
 
 ##### Preliminary plotting #####
 # hist sex
-plot(data$Sex)
+# plot(data$Sex)
+data %>%
+  group_by(Sex) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x=Sex, y=n)) +
+  geom_bar(stat = "identity", width = 0.5, aes(fill = Sex)) +
+  geom_text(aes(label=n), vjust=1.6, color="white", size=5)+
+  theme_classic()
 
 # hist age 0-20 20-30 30-40 40-50 50-60 60-70 70-80 80+
 data$age_class <- factor(data$Age%/%10)
-plot(data$age_class)
+# plot(data$age_class)
+data %>%
+  ggplot(aes(x=Age)) +
+  geom_histogram(bins = 40, fill = gray.colors(40))+
+  theme_classic()
 
 # cumulative
 data$time <- data$Date-data$Date[1]
 plot(data$time,rownames(data),type="l")
 
 # by regions
-plot(data$Region, las=3)
+#plot(data$Region, las=3)
+data %>%
+  group_by(Region) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x=Region, y=n)) +
+  geom_bar(stat = "identity", width = 1, aes(fill = Region)) +
+  geom_text(aes(label=n), vjust=1.6, color="white", size=4)+
+  theme_classic()+
+  theme(axis.text.x = element_text(vjust = 0.6, angle=30))
 
 # Daily data
 data_daily <- data %>%
@@ -65,13 +83,21 @@ post_lockdown <- c(no_lock, post_lock)
 data_daily$post_lockdown <- post_lockdown
 
 # Daily data show a strong periodicity due to (possibly) sunday testing?
-plot(data_daily$time, data_daily$daily_cases, type = "l")
+#plot(data_daily$time, data_daily$daily_cases, type = "l")
+data_daily %>%
+  ggplot(aes(x=time, y=daily_cases))+
+  geom_line()+
+  theme_classic()
 
 # Moving averages make them smooth
 data_daily$avg_cases <- movavg(data_daily$daily_cases, n= 7, type="s")
 data_daily$avg_cases <- as.integer(data_daily$avg_cases)
 data_daily$time <- as.integer(data_daily$time)
-plot(data_daily$time, data_daily$avg_cases, type = "l")
+#plot(data_daily$time, data_daily$avg_cases, type = "l")
+data_daily %>%
+  ggplot(aes(x=time, y=avg_cases))+
+  geom_line()+
+  theme_classic()
 
 
 lag1 <- c(NA, data_daily$avg_cases[1:199])
@@ -87,6 +113,8 @@ test_days = 5
 days <- as.integer(length(data_daily$time))
 training_set <- data_daily[data_daily$time<days-test_days,]
 test_set <- data_daily[data_daily$time>=days-test_days,]
+
+##### Plot and Loss functions #####
 
 ##### Plot and Loss functions #####
 
@@ -398,6 +426,7 @@ loss_earth <- function(model, test){
 plot(data_daily$time, data_daily$avg_cases, type = "l")
 abline(v=c(82, 152), lty=2)
 
+
 ##### Poisson Regression #####
 
 # time: this is just hopeless
@@ -442,7 +471,7 @@ loss_stan_lag(model_time_lock_3_lag_2, test_set, data_daily) #12182
 #boh boh
 model_gam <- gam(avg_cases ~  s(time) + lag2, method="REML", family = poisson(), data = training_set)
 loss(model_gam, test_set) #25846
-loss_lag(model_gam, test_set) #95120: peggiora notevolmente, non capisco bene perché
+loss_lag(model_gam, test_set) #95120: peggiora notevolmente, non capisco bene perchï¿½
 
 
 ##### MARS #####
@@ -476,8 +505,6 @@ female$avg_cases <- movavg(female$daily_cases, n= 7, type="s")
 male$avg_cases <- movavg(male$daily_cases, n= 7, type="s")
 plot(female$time, female$avg_cases, type = "l")
 points(male$time, male$avg_cases, type="l", col=2)
-
-# REGIONS
 
 ##### Regions utils ######
 
@@ -706,7 +733,7 @@ par(mfrow=c(1,1))
 
 # now to choose the model look at acf and pacf
 acf(detrend2)
-pacf(detrend2) #Girls, che minchia è questo?
+pacf(detrend2) #Girls, che minchia ï¿½ questo?
 # seems an AR(2) -> ARIMA(2,1,0)
 
 #but trying to use auto selection
@@ -734,9 +761,15 @@ plot(data_daily$cumulative,type="l")
 logistic_model <- nls(cumulative ~ SSlogis(time, Asym, xmid, scal), data=training_set)
 coeff <- coef(logistic_model)
 x <- 1:400
-plot(x,SSlogis(x,coeff[1],coeff[2],coeff[3]),type="l")
-points(data_daily$time, data_daily$cumulative, col=3, pch=1)
-points(test_set$time,test_set$cumulative,col=2,pch=20)
+#plot(x,SSlogis(x,coeff[1],coeff[2],coeff[3]),type="l")
+#points(data_daily$time, data_daily$cumulative, col=3, pch=1)
+#points(test_set$time,test_set$cumulative,col=2,pch=20)
+df <- data.frame(cbind(time = x, cumulative = SSlogis(x,coeff[1],coeff[2],coeff[3])))
+ggplot()+
+  geom_line(data = df, aes(x = time, y=cumulative))+
+  geom_point(data = data_daily, aes(x = time, y=cumulative), col = 3, pch =1) +
+  geom_point(data = test_set, aes(x =time, y= cumulative), col = 2) +
+  theme_classic()
 
 #Desumming
 desum <- function(model, coeffs, test, training){
@@ -764,18 +797,30 @@ gomp <- function(data,alpha,beta,k){
 plot(x,gomp(x,300000,188,0.03),type="l")
 points(data_daily$time,data_daily$cumulative,col=2,pch=20)
 
-?predict.nls
 gomp_model <- nls(cumulative ~ SSgompertz(time,alpha, beta, k), data=training_set)
 coeff <- coef(gomp_model)
 coeff 
-plot(x,SSgompertz(x,coeff[1],coeff[2],coeff[3]),type="l")
-points(data_daily$time,data_daily$cumulative,col=2,pch=20)
+#plot(x,SSgompertz(x,coeff[1],coeff[2],coeff[3]),type="l")
+#points(data_daily$time,data_daily$cumulative,col=2,pch=20)
+df = data.frame(cbind(time = x, cumulative = SSgompertz(x,coeff[1],coeff[2],coeff[3])))
+ggplot()+
+  geom_line(data = df, aes(x = time, y=cumulative))+
+  geom_point(data = data_daily, aes(x = time, y=cumulative), col = 3, pch =1) +
+  geom_point(data = test_set, aes(x =time, y= cumulative), col = 2) +
+  theme_classic()
 
-plot(test_set$time, test_set$cumulative, type= "l")
-points(test_set$time,SSgompertz(test_set$time,coeff[1],coeff[2],coeff[3]), type = "l", col = "red")
+#plot(test_set$time, test_set$cumulative, type= "l")
+#points(test_set$time,SSgompertz(test_set$time,coeff[1],coeff[2],coeff[3]), type = "l", col = "red")
+ggplot()+
+  geom_line(data = test_set, aes(x = time, y=SSgompertz(time,coeff[1],coeff[2],coeff[3])), col = 3) +
+  geom_line(data = test_set, aes(x =time, y= cumulative), col = 2) +
+  geom_point(data = test_set, aes(x = time, y=SSgompertz(time,coeff[1],coeff[2],coeff[3])), col = 3, pch =1) +
+  geom_point(data = test_set, aes(x =time, y= cumulative), col = 2) +
+  theme_classic()
 mse(test_set$cumulative,SSgompertz(test_set$time,coeff[1],coeff[2],coeff[3]))
 
 desum(SSgompertz, coeff, test_set, training_set) #457k
+
 #### GAM ON CUMULATIVE DATA ##### 
 
 #boh boh
