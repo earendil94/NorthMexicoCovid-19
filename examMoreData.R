@@ -9,7 +9,7 @@ library(Metrics)
 library(mgcv)
 library(earth)
 library(ggplot2)
-
+library(latex2exp)
 
 ##### CSV loading #####
 data <- read.csv("MexicoCovid19Updated.csv", header = T, sep = ",")
@@ -119,7 +119,8 @@ test_set <- data_daily[data_daily$time>=days-test_days,]
 ##### Plot and Loss functions #####
 
 # bayesian
-loss_stan <- function(model, test, data_daily){
+
+loss_stan <- function(model, test, data_daily, title, filename){
 
   pred_model <- posterior_predict(model, newdata = test)
   train_model <- posterior_predict(model)
@@ -151,14 +152,16 @@ loss_stan <- function(model, test, data_daily){
                 aes(x=time, ymin=train_0025, ymax=train_0975), alpha=0.2,
                 fill = "blue") +
     theme_classic() +
-    ggtitle(model$call)  
+    ggtitle(title)  +
+    theme(plot.title = element_text(hjust = 0.5))
   
   print(plot)
+  ggsave(filename = filename, plot = plot, device = "png")
   return(mse(test$avg_cases, pred_mean))
 }
 
 # bayesian + updating lag
-loss_stan_lag <- function(model, test, data_daily){
+loss_stan_lag <- function(model, test, data_daily, title, filename){
   df <- test
   pred_model <- posterior_predict(model, newdata = df[1,])
   pred <- apply(pred_model, 2, mean)
@@ -212,6 +215,7 @@ loss_stan_lag <- function(model, test, data_daily){
                                train_mean, train_0025, train_0975))
   pred_df <- data.frame(cbind(time = data_daily$time[196:200],
                               pred_mean, pred_0025, pred_0975))
+
   plot <- ggplot() +
     geom_point(data = data_daily, aes(x=time, y=avg_cases)) +
     geom_line(data = pred_df, 
@@ -229,7 +233,9 @@ loss_stan_lag <- function(model, test, data_daily){
                 aes(x=time, ymin=train_0025, ymax=train_0975), alpha=0.2,
                 fill = "blue") +
     theme_classic() +
-    ggtitle(model$call)  
+    ggtitle(title)  +
+    theme(plot.title = element_text(hjust = 0.5))
+  ggsave(filename = filename, plot = plot, device = "png")
   
   print(plot)
 
@@ -238,7 +244,7 @@ loss_stan_lag <- function(model, test, data_daily){
 
 
 # frequentist
-loss <- function(model, test, data_daily){
+loss <- function(model, test, data_daily, title, filename){
   pred <- predict(model, newdata = test, type = "response", se.fit = TRUE)
   pred_mean <- pred$fit
   pred_0025 <- pred$fit - 2*pred$se.fit
@@ -252,6 +258,7 @@ loss <- function(model, test, data_daily){
                                train_mean, train_0025, train_0975))
   pred_df <- data.frame(cbind(time = data_daily$time[196:200],
                               pred_mean, pred_0025, pred_0975))
+  
   plot <- ggplot() +
     geom_point(data = data_daily, aes(x=time, y=avg_cases)) +
     geom_line(data = pred_df, 
@@ -269,14 +276,16 @@ loss <- function(model, test, data_daily){
                 aes(x=time, ymin=train_0025, ymax=train_0975), alpha=0.2,
                 fill = "blue") +
     theme_classic() +
-    ggtitle(model$call)    
+    ggtitle(title) +
+    theme(plot.title = element_text(hjust = 0.5))   
+  ggsave(filename = filename, plot = plot, device = "png")
   
   print(plot)
   return(mse(test$avg_cases, pred_mean))
 }
 
 
-loss_lag <- function(model, test, data_daily){
+loss_lag <- function(model, test, data_daily, title, filename){
   df <- test
   predictions <- predict(model, newdata = df[1,], type="response", se.fit = TRUE,
                          interval = "pint")
@@ -343,14 +352,16 @@ loss_lag <- function(model, test, data_daily){
                 aes(x=time, ymin=train_0025, ymax=train_0975), alpha=0.2,
                 fill = "blue") +
     theme_classic() +
-    ggtitle(model$call)    
+    ggtitle(title)  +
+    theme(plot.title = element_text(hjust = 0.5))  
+  ggsave(filename = filename, plot = plot, device = "png")
   
   print(plot)
 
   return(ms/length(pred_mean)) 
 }
 
-loss_earth <- function(model, test){
+loss_earth <- function(model, test, filename){
   df <- test
   predictions <- predict(model, newdata = df[1,], type="response", interval = "pint")
   pred_model <- predictions$fit
@@ -416,7 +427,7 @@ loss_earth <- function(model, test){
                 fill = "blue") +
     theme_classic() +
     ggtitle(model$call)    
-  
+  ggsave(filename = filename, plot = plot, device = "png")
   print(plot)
   
   return(ms/length(pred_mean)) 
@@ -431,25 +442,30 @@ abline(v=c(82, 152), lty=2)
 
 # time: this is just hopeless
 model_time <- stan_glm(avg_cases ~ time + lag2, family = poisson,  data=training_set)
-loss_stan_lag(model_time, test_set, data_daily)
+loss_stan_lag(model_time, test_set, data_daily, 
+              TeX("Avg cases $\\sim$ time"), "model_time.png") #538224967
 
 # time^2
 model_time_2_no_lag <- stan_glm( avg_cases ~ time + I(time^2), family = poisson,  data=training_set)
-loss_stan(model_time_2_no_lag, test_set, data_daily) #116642
+loss_stan(model_time_2_no_lag, test_set, data_daily,
+          TeX("Avg cases $\\sim$ time + time^2"),"model_time_2_no_lag.png") #117060
 
 model_time_2_lag2 <- stan_glm( avg_cases ~ time + I(time^2) + lag2, family = poisson,  data=training_set)
-loss_stan_lag(model_time_2_lag2, test_set, data_daily) #32918
+loss_stan_lag(model_time_2_lag2, test_set, data_daily, 
+              TeX("Avg cases $\\sim$ time + time^2 + lag2"),"model_time_2_lag2.png") #32801
 
 # time^3
 model_time_3_no_lag <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3), family = poisson,  data=training_set)
-loss_stan(model_time_3_no_lag, test_set, data_daily) #159659 -> Super high if no lag is used
+loss_stan(model_time_3_no_lag, test_set, data_daily, 
+          TeX("Avg cases $\\sim$ time + time^2 + time^3"),"model_time_3_no_lag.png") #159775
 
 model_time_3_lag_2 <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3) + lag2, family = poisson,  data=training_set)
-loss_stan_lag(model_time_3, test_set, data_daily) #14714
+loss_stan_lag(model_time_3_lag_2, test_set, data_daily, 
+              TeX("Avg cases $\\sim$ time + time^2 + time^3 + lag2"),"model_time_3_lag_2.png") #15468
 
 model_time_3_lag_1_2 <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3) + lag2 + lag1, family = poisson,  data=training_set)
-loss_stan_lag(model_time_3_lag_1_2, test_set, data_daily) #34599 
-
+loss_stan_lag(model_time_3_lag_1_2, test_set, data_daily, 
+              TeX("Avg cases $\\sim$ time + time^2 + time^3 + lag1 + lag2"), "model_time_3_lag_1_2.png") #35164 
 
 # exp(time) !!!!!!
 model_time_exp <- glm(avg_cases ~ time + I(time^2) + I(exp(time)), family = poisson,  data=training_set)
@@ -457,29 +473,41 @@ loss(model_time_exp, test_set)
 
 # lockdown
 model_time_lock <- stan_glm(avg_cases ~ time +  I(time^2) + post_lockdown + lockdown, family = poisson,  data=training_set )
-loss_stan(model_time_lock, test_set, data_daily)
+loss_stan(model_time_lock, test_set, data_daily, 
+          TeX("Avg cases $\\sim$ time + time^2 + post lockdown + lockdown"), "model_time_lock.png") #93525
 
 # lockdown with lag and updated predictions
 model_time_lock_lag2 <- stan_glm(avg_cases ~ time +  I(time^2) + lag2 + post_lockdown + lockdown, family = poisson,  data=training_set )
-loss_stan_lag(model_time_lock_lag2, test_set, data_daily) #27924
+loss_stan_lag(model_time_lock_lag2, test_set, data_daily, 
+              TeX("Avg cases $\\sim$ time + time^2 + lag 2 + post lockdown + lockdown"),"model_time_lock_lag2.png") #27203
 
 model_time_lock_3_lag_2 <- stan_glm(avg_cases ~ time +  I(time^2) + I(time^3) + lag2 + post_lockdown + lockdown, family = poisson,  data=training_set )
-loss_stan_lag(model_time_lock_3_lag_2, test_set, data_daily) #12182
+loss_stan_lag(model_time_lock_3_lag_2, test_set, data_daily, 
+              TeX("Avg cases $\\sim$ time + time^2 + time^3 + lag 2 + post lockdown + lockdown"),"model_time_lock_3_lag_2.png") #12182
 
 ##### GAM ######
 
 #boh boh
 model_gam <- gam(avg_cases ~  s(time) + lag2, method="REML", family = poisson(), data = training_set)
-loss(model_gam, test_set) #25846
-loss_lag(model_gam, test_set) #95120: peggiora notevolmente, non capisco bene perch�
+loss_lag(model_gam, test_set, data_daily,
+         TeX("Avg cases $\\sim$ s(time, bs='tp') +  lag 2"), "model_gam.png") #53655
 
+model_gam_slag_spost_lockdown <- gam(avg_cases ~  s(time) + s(post_lockdown) + lag2, method="REML", family = poisson(), data = training_set)
+loss_lag(model_gam_slag_spost_lockdown, test_set, data_daily, 
+         TeX("Avg cases $\\sim$ s(time, bs='tp') +  s(post lockdown) + lag 2"),"model_gam_slag_spost_lockdown.png") #12028
+
+model_gam_b_splines <- gam(avg_cases ~  s(time, bs="bs", k=6) + lag2, method="REML", family = poisson(), data = training_set)
+loss_lag(model_gam_b_splines, test_set, data_daily, 
+         TeX("Avg cases $\\sim$ s(time, bs='bs')  + lag 2"), "model_gam_b_splines.png")
 
 ##### MARS #####
-?earth
+
 training_set_3 <- training_set[3:dim(training_set)[1],]
 mars <- earth(avg_cases ~ time + lag2, data = training_set_3, varmod.method = "power",
               nfold = 5, ncross = 30)
 loss_earth(mars, test_set)
+
+
 
 ################################################################################
 ###################### DIVISION ################################################
@@ -619,16 +647,16 @@ NuevoLeon_training <- prepare_region(NuevoLeon)[[1]]
 NuevoLeon_test <- prepare_region(NuevoLeon)[[2]]
 
 model_time_3_no_lag_leon <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3), family = poisson,  data=NuevoLeon_training)
-loss_stan(model_time_3_no_lag_leon, NuevoLeon_test, NuevoLeon) #2160
+loss_stan(model_time_3_no_lag_leon, NuevoLeon_test, NuevoLeon, "model_time_3_no_lag_leon.png") #2118
 
 model_time_3_lag_leon <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3) +lag2, family = poisson,  data=NuevoLeon_training)
-loss_stan_lag(model_time_3_lag_leon, NuevoLeon_test, NuevoLeon) #267353 -> Interesting, it has an almost exp growth
+loss_stan_lag(model_time_3_lag_leon, NuevoLeon_test, NuevoLeon,"model_time_3_lag_leon.png") #267353 -> Interesting, it has an almost exp growth
 
 model_gam_no_lag_leon <- gam(avg_cases ~  s(time), method="REML", family = poisson(), data = NuevoLeon_training)
-loss(model_gam_no_lag_leon, NuevoLeon_test, NuevoLeon) #12139
+loss(model_gam_no_lag_leon, NuevoLeon_test, NuevoLeon, "model_gam_no_lag_leon.png") #12139
 
 model_gam_lag_leon <- gam(avg_cases ~  s(time) + lag2, method="REML", family = poisson(), data = NuevoLeon_training)
-loss_lag(model_gam_lag_leon, NuevoLeon_test, NuevoLeon) #61690: also this one "runs away"
+loss_lag(model_gam_lag_leon, NuevoLeon_test, NuevoLeon, "model_gam_lag_leon.png") #61690: also this one "runs away"
 
 ##### Chihuahua ######
 Chihuahua_training <- prepare_region(Chihuahua)[[1]]
