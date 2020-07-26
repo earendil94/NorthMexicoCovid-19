@@ -1,6 +1,7 @@
 ##### Libraries #####
 
 library(dplyr)
+library(tidyr)
 library(readr)
 library(pracma)
 library(rstanarm)
@@ -90,29 +91,37 @@ test_set <- data_daily[data_daily$time>=days-test_days,]
 ##### Plot and Loss functions #####
 
 # bayesian
-loss_stan <- function(model, test){
+loss_stan <- function(model, test, data_daily){
+
   pred_model <- posterior_predict(model, newdata = test)
+  train_model <- posterior_predict(model)
   pred_0025 <- apply(pred_model, 2, function(x) quantile(x, 0.025))
   pred_0975 <- apply(pred_model, 2, function(x) quantile(x, 0.975))
   pred_mean <- apply(pred_model, 2, mean)
+  train_mean <- apply(train_model, 2, mean)
+  train_0025 <- apply(train_model, 2, function(x) quantile(x, 0.025))
+  train_0975 <- apply(train_model, 2, function(x) quantile(x, 0.975))
   
-  new_df <- data.frame(cbind(time = data_daily$time[196:200],
-                             pred_mean, pred_0025, pred_0975))
+  train_df <- data.frame(cbind(time = data_daily$time[1:195],
+                               train_mean, train_0025, train_0975))
+  pred_df <- data.frame(cbind(time = data_daily$time[196:200],
+                              pred_mean, pred_0025, pred_0975))
   plot <- ggplot() +
-    geom_line(data = data_daily[191:200,], aes(x=time, y=avg_cases),
-              col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
-    geom_line(data = new_df, 
+    geom_point(data = data_daily, aes(x=time, y=avg_cases)) +
+    geom_line(data = pred_df, 
               aes(x=time,y=pred_mean),
               col="orange",
               lwd=0.8) +
-    geom_point(data = data_daily[191:200,], aes(x=time, y=avg_cases),
-               col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
-    geom_point(data = new_df, 
-               aes(x=time,y=pred_mean),
-               col="orange") +
-    geom_ribbon(data = new_df, 
+    geom_ribbon(data = pred_df, 
                 aes(x=time,ymin=pred_0025, ymax=pred_0975), alpha=0.2,
                 fill = "orange") +
+    geom_line(data = train_df,
+              aes(x=time, y=train_mean),
+              col="blue",
+              lwd=0.8) +
+    geom_ribbon(data = train_df,
+                aes(x=time, ymin=train_0025, ymax=train_0975), alpha=0.2,
+                fill = "blue") +
     theme_classic() +
     ggtitle(model$call)  
   
@@ -121,7 +130,7 @@ loss_stan <- function(model, test){
 }
 
 # bayesian + updating lag
-loss_stan_lag <- function(model, test){
+loss_stan_lag <- function(model, test, data_daily){
   df <- test
   pred_model <- posterior_predict(model, newdata = df[1,])
   pred <- apply(pred_model, 2, mean)
@@ -166,69 +175,83 @@ loss_stan_lag <- function(model, test){
 
   }
   
-  new_df <- data.frame(cbind(time = data_daily$time[196:200],
-                             pred_mean, pred_0025, pred_0975))
+  train_model <- posterior_predict(model)
+  train_mean <- apply(train_model, 2, mean)
+  train_0025 <- apply(train_model, 2, function(x) quantile(x, 0.025))
+  train_0975 <- apply(train_model, 2, function(x) quantile(x, 0.975))
+  
+  train_df <- data.frame(cbind(time = data_daily$time[3:195],
+                               train_mean, train_0025, train_0975))
+  pred_df <- data.frame(cbind(time = data_daily$time[196:200],
+                              pred_mean, pred_0025, pred_0975))
   plot <- ggplot() +
-    geom_line(data = data_daily[191:200,], aes(x=time, y=avg_cases),
-              col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
-    geom_line(data = new_df, 
+    geom_point(data = data_daily, aes(x=time, y=avg_cases)) +
+    geom_line(data = pred_df, 
               aes(x=time,y=pred_mean),
               col="orange",
               lwd=0.8) +
-    geom_point(data = data_daily[191:200,], aes(x=time, y=avg_cases),
-               col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
-    geom_point(data = new_df, 
-               aes(x=time,y=pred_mean),
-               col="orange") +
-    geom_ribbon(data = new_df, 
+    geom_ribbon(data = pred_df, 
                 aes(x=time,ymin=pred_0025, ymax=pred_0975), alpha=0.2,
                 fill = "orange") +
+    geom_line(data = train_df,
+              aes(x=time, y=train_mean),
+              col="blue",
+              lwd=0.8) +
+    geom_ribbon(data = train_df,
+                aes(x=time, ymin=train_0025, ymax=train_0975), alpha=0.2,
+                fill = "blue") +
     theme_classic() +
     ggtitle(model$call)  
   
   print(plot)
 
-  return(ms/length(pred))
+  return(ms/length(pred_mean))
 }
 
 
 # frequentist
-loss <- function(model, test){
+loss <- function(model, test, data_daily){
   pred <- predict(model, newdata = test, type = "response", se.fit = TRUE)
   pred_mean <- pred$fit
   pred_0025 <- pred$fit - 2*pred$se.fit
   pred_0975 <- pred$fit + 2*pred$se.fit
   
-  new_df <- data.frame(cbind(time = data_daily$time[196:200],
-                             pred_mean, pred_0025, pred_0975))
+  train_model <- predict(model, type="response", se.fit=TRUE)
+  train_mean <- train_model$fit
+  train_0025 <- train_model$fit - 2*train_model$se.fit
+  train_0975 <- train_model$fit + 2*train_model$se.fit
+  train_df <- data.frame(cbind(time = data_daily$time[1:195],
+                               train_mean, train_0025, train_0975))
+  pred_df <- data.frame(cbind(time = data_daily$time[196:200],
+                              pred_mean, pred_0025, pred_0975))
   plot <- ggplot() +
-    geom_line(data = data_daily[191:200,], aes(x=time, y=avg_cases),
-              col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
-    geom_line(data = new_df, 
+    geom_point(data = data_daily, aes(x=time, y=avg_cases)) +
+    geom_line(data = pred_df, 
               aes(x=time,y=pred_mean),
               col="orange",
               lwd=0.8) +
-    geom_point(data = data_daily[191:200,], aes(x=time, y=avg_cases),
-               col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
-    geom_point(data = new_df, 
-               aes(x=time,y=pred_mean),
-               col="orange") +
-    geom_ribbon(data = new_df, 
+    geom_ribbon(data = pred_df, 
                 aes(x=time,ymin=pred_0025, ymax=pred_0975), alpha=0.2,
                 fill = "orange") +
+    geom_line(data = train_df,
+              aes(x=time, y=train_mean),
+              col="blue",
+              lwd=0.8) +
+    geom_ribbon(data = train_df,
+                aes(x=time, ymin=train_0025, ymax=train_0975), alpha=0.2,
+                fill = "blue") +
     theme_classic() +
-    ggtitle(model$call)  
+    ggtitle(model$call)    
   
   print(plot)
   return(mse(test$avg_cases, pred_mean))
 }
 
 
-loss_lag <- function(model, test){
+loss_lag <- function(model, test, data_daily){
   df <- test
   predictions <- predict(model, newdata = df[1,], type="response", se.fit = TRUE,
                          interval = "pint")
-  View(predictions)  
   pred_model <- predictions$fit
   ms <- mse(as.double(df[1,"avg_cases"]), pred_model)
   pred_mean <- pred_model
@@ -266,29 +289,109 @@ loss_lag <- function(model, test){
     
   }
   
-  new_df <- data.frame(cbind(time = data_daily$time[196:200],
-                             pred_mean, pred_0025, pred_0975))
+  train_model <- predict(model, type="response", se.fit=TRUE)
+  train_mean <- train_model$fit
+  train_0025 <- train_model$fit - 2*train_model$se.fit
+  train_0975 <- train_model$fit + 2*train_model$se.fit
+
+  train_df <- data.frame(cbind(time = data_daily$time[3:195],
+                               train_mean, train_0025, train_0975))
+  pred_df <- data.frame(cbind(time = data_daily$time[196:200],
+                              pred_mean, pred_0025, pred_0975))
   plot <- ggplot() +
-    geom_line(data = data_daily[191:200,], aes(x=time, y=avg_cases),
-              col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
-    geom_line(data = new_df, 
+    geom_point(data = data_daily, aes(x=time, y=avg_cases)) +
+    geom_line(data = pred_df, 
               aes(x=time,y=pred_mean),
               col="orange",
               lwd=0.8) +
-    geom_point(data = data_daily[191:200,], aes(x=time, y=avg_cases),
-               col = ifelse(data_daily$time[191:200]>194, "red", "black")) + 
-    geom_point(data = new_df, 
-               aes(x=time,y=pred_mean),
-               col="orange") +
-    geom_ribbon(data = new_df, 
+    geom_ribbon(data = pred_df, 
                 aes(x=time,ymin=pred_0025, ymax=pred_0975), alpha=0.2,
                 fill = "orange") +
+    geom_line(data = train_df,
+              aes(x=time, y=train_mean),
+              col="blue",
+              lwd=0.8) +
+    geom_ribbon(data = train_df,
+                aes(x=time, ymin=train_0025, ymax=train_0975), alpha=0.2,
+                fill = "blue") +
     theme_classic() +
-    ggtitle(model$call)  
+    ggtitle(model$call)    
   
   print(plot)
 
-  return(ms/length(pred)) 
+  return(ms/length(pred_mean)) 
+}
+
+loss_earth <- function(model, test){
+  df <- test
+  predictions <- predict(model, newdata = df[1,], type="response", interval = "pint")
+  pred_model <- predictions$fit
+  ms <- mse(as.double(df[1,"avg_cases"]), pred_model)
+  pred_mean <- pred_model
+  pred_0025 <- predictions$lwr
+  pred_0975 <- predictions$upr
+  
+  df[1, "avg_cases"] <- pred_model
+  
+  #If we are just predicting one day then we are done
+  if (dim(df)[1] == 1){
+    return(ms)
+  }
+  
+  #Yes, I know having not one but two nested loops is bad in R
+  #But look, there will not be that many iterations, we are dealing
+  #With short predictions here
+  for (i in 2:dim(df)[1]){
+    df[i, "lag1"] <- df[i-1, "avg_cases"]
+    #Need to update each lag column
+    for (k in 2:i){
+      col <- paste("lag",k,sep="")
+      col_prev <- paste("lag",k-1, sep="")
+      df[i, col] <- df[i-1, col_prev]
+    }
+    
+    predictions <- predict(model, newdata = df[i,], type="response", interval = "pint")
+    pred_model <- predictions$fit
+    pred_mean <- c(pred_mean, pred_model)
+    pred_0025 <- c(pred_0025, predictions$lwr)
+    pred_0975 <- c(pred_0975, predictions$upr)
+    
+    ms <- ms + mse(as.double(df[i,"avg_cases"]), pred_model)
+    df[i, "avg_cases"] <- pred_model
+    
+  }
+  
+  train_model <- predict(model, type="response", interval= "pint")
+  train_mean <- train_model$fit
+  train_0025 <- train_model$lwr
+  train_0975 <- train_model$upr
+  
+  train_df <- data.frame(cbind(time = data_daily$time[3:195],
+                               train_mean, train_0025, train_0975))
+  pred_df <- data.frame(cbind(time = data_daily$time[196:200],
+                              pred_mean, pred_0025, pred_0975))
+  plot <- ggplot() +
+    geom_point(data = data_daily, aes(x=time, y=avg_cases)) +
+    geom_line(data = pred_df, 
+              aes(x=time,y=pred_mean),
+              col="orange",
+              lwd=0.8) +
+    geom_ribbon(data = pred_df, 
+                aes(x=time,ymin=pred_0025, ymax=pred_0975), alpha=0.2,
+                fill = "orange") +
+    geom_line(data = train_df,
+              aes(x=time, y=train_mean),
+              col="blue",
+              lwd=0.8) +
+    geom_ribbon(data = train_df,
+                aes(x=time, ymin=train_0025, ymax=train_0975), alpha=0.2,
+                fill = "blue") +
+    theme_classic() +
+    ggtitle(model$call)    
+  
+  print(plot)
+  
+  return(ms/length(pred_mean)) 
 }
 
 
@@ -299,28 +402,24 @@ abline(v=c(82, 152), lty=2)
 
 # time: this is just hopeless
 model_time <- stan_glm(avg_cases ~ time + lag2, family = poisson,  data=training_set)
-loss_stan(model_time, test_set) # sucks
-loss_stan_lag(model_time, test_set)
+loss_stan_lag(model_time, test_set, data_daily)
 
 # time^2
 model_time_2_no_lag <- stan_glm( avg_cases ~ time + I(time^2), family = poisson,  data=training_set)
-loss_stan(model_time_2_no_lag, test_set) #116642
+loss_stan(model_time_2_no_lag, test_set, data_daily) #116642
 
 model_time_2_lag2 <- stan_glm( avg_cases ~ time + I(time^2) + lag2, family = poisson,  data=training_set)
-loss_stan(model_time_2_lag2, test_set) #28713
-loss_stan_lag(model_time_2_lag2, test_set) #32918
+loss_stan_lag(model_time_2_lag2, test_set, data_daily) #32918
 
 # time^3
 model_time_3_no_lag <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3), family = poisson,  data=training_set)
-loss_stan(model_time_3_no_lag, test_set) #159659 -> Super high if no lag is used
+loss_stan(model_time_3_no_lag, test_set, data_daily) #159659 -> Super high if no lag is used
 
 model_time_3_lag_2 <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3) + lag2, family = poisson,  data=training_set)
-loss_stan(model_time_3, test_set) #13000
-loss_stan_lag(model_time_3, test_set) #14714
+loss_stan_lag(model_time_3, test_set, data_daily) #14714
 
 model_time_3_lag_1_2 <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3) + lag2 + lag1, family = poisson,  data=training_set)
-loss_stan(model_time_3_lag_1_2, test_set) #5183
-loss_stan_lag(model_time_3_lag_1_2, test_set) #34599 
+loss_stan_lag(model_time_3_lag_1_2, test_set, data_daily) #34599 
 
 
 # exp(time) !!!!!!
@@ -329,16 +428,14 @@ loss(model_time_exp, test_set)
 
 # lockdown
 model_time_lock <- stan_glm(avg_cases ~ time +  I(time^2) + post_lockdown + lockdown, family = poisson,  data=training_set )
-loss_stan(model_time_lock, test_set)
+loss_stan(model_time_lock, test_set, data_daily)
 
 # lockdown with lag and updated predictions
 model_time_lock_lag2 <- stan_glm(avg_cases ~ time +  I(time^2) + lag2 + post_lockdown + lockdown, family = poisson,  data=training_set )
-loss_stan(model_time_lock_lag2, test_set) #14075
-loss_stan_lag(model_time_lock, test_set) #27924
+loss_stan_lag(model_time_lock_lag2, test_set, data_daily) #27924
 
 model_time_lock_3_lag_2 <- stan_glm(avg_cases ~ time +  I(time^2) + I(time^3) + lag2 + post_lockdown + lockdown, family = poisson,  data=training_set )
-loss_stan(model_time_lock_3_lag_2, test_set) #7553
-loss_stan_lag(model_time_lock_3_lag_2, test_set) #12182
+loss_stan_lag(model_time_lock_3_lag_2, test_set, data_daily) #12182
 
 ##### GAM ######
 
@@ -348,21 +445,13 @@ loss(model_gam, test_set) #25846
 loss_lag(model_gam, test_set) #95120: peggiora notevolmente, non capisco bene perché
 
 
-
-##### MARS
+##### MARS #####
 ?earth
 training_set_3 <- training_set[3:dim(training_set)[1],]
 mars <- earth(avg_cases ~ time + lag2, data = training_set_3, varmod.method = "power",
               nfold = 5, ncross = 30)
+loss_earth(mars, test_set)
 
-mars$rss
-?predict.earth
-loss_lag(mars, test_set)
-pred <- predict(mars, newdata = test_set, type = "response")
-plot(data_daily$time[190:200], data_daily$avg_cases[190:200], type= "l")
-points(test_set$time, pred, type = "l", col = "red")
- mse(test_set$avg_cases, pred) #54347
-loss_lag(mars, test_set)
 ################################################################################
 ###################### DIVISION ################################################
 ################################################################################
@@ -390,6 +479,27 @@ points(male$time, male$avg_cases, type="l", col=2)
 
 # REGIONS
 
+##### Regions utils ######
+
+fill_region <- function(region){
+  region <- region %>%
+    complete(time = seq(0,199,1)) 
+  region[is.na(region)] <- 0
+  return(region)
+}
+
+prepare_region <- function(region){
+  region$avg_cases <- as.integer(region$avg_cases)
+  region$time <- as.integer(region$time)
+  lag1 <- c(NA, region$avg_cases[1:199])
+  lag2 <- c(NA, NA, region$avg_cases[1:198])
+  region$lag1 <- lag1 
+  region$lag2 <- lag2
+  region_training <- region[region$time<days-test_days,]
+  region_test <- region[region$time>=days-test_days,]
+  return(list(region_training,region_test))
+}
+
 BajaCalifornia <- data %>%
   group_by(Region, time) %>%
   summarize(daily_cases = n()) %>%
@@ -399,6 +509,7 @@ Chihuahua <- data %>%
   group_by(Region, time) %>%
   summarize(daily_cases = n()) %>%
   filter(Region=="CHIHUAHUA")
+Chihuahua <- fill_region(Chihuahua)
 
 Coahuila <- data %>%
   group_by(Region, time) %>%
@@ -415,6 +526,8 @@ NuevoLeon <- data %>%
   summarize(daily_cases = n()) %>%
   filter(Region=="NUEVO LEON")
 
+NuevoLeon <- fill_region(NuevoLeon)
+
 Sinaloa <- data %>%
   group_by(Region, time) %>%
   summarize(daily_cases = n()) %>%
@@ -429,6 +542,7 @@ Tamaulipas <- data %>%
   group_by(Region, time) %>%
   summarize(daily_cases = n()) %>%
   filter(Region=="TAMAULIPAS")
+Tamaulipas <- fill_region(Tamaulipas)
 
 Zacatecas <- data %>%
   group_by(Region, time) %>%
@@ -473,7 +587,56 @@ points(Zacatecas$time, Zacatecas$avg_cases, type="l", col=9)
 ####### Models for the three biggest regions #####
 ##################################################
 
-###### Nuevo Leon
+###### Nuevo Leon ######
+NuevoLeon_training <- prepare_region(NuevoLeon)[[1]]
+NuevoLeon_test <- prepare_region(NuevoLeon)[[2]]
+
+model_time_3_no_lag_leon <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3), family = poisson,  data=NuevoLeon_training)
+loss_stan(model_time_3_no_lag_leon, NuevoLeon_test, NuevoLeon) #2160
+
+model_time_3_lag_leon <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3) +lag2, family = poisson,  data=NuevoLeon_training)
+loss_stan_lag(model_time_3_lag_leon, NuevoLeon_test, NuevoLeon) #267353 -> Interesting, it has an almost exp growth
+
+model_gam_no_lag_leon <- gam(avg_cases ~  s(time), method="REML", family = poisson(), data = NuevoLeon_training)
+loss(model_gam_no_lag_leon, NuevoLeon_test, NuevoLeon) #12139
+
+model_gam_lag_leon <- gam(avg_cases ~  s(time) + lag2, method="REML", family = poisson(), data = NuevoLeon_training)
+loss_lag(model_gam_lag_leon, NuevoLeon_test, NuevoLeon) #61690: also this one "runs away"
+
+##### Chihuahua ######
+Chihuahua_training <- prepare_region(Chihuahua)[[1]]
+Chihuahua_test <- prepare_region(Chihuahua)[[2]]
+
+
+model_time_3_no_lag_chi <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3), family = poisson,  data=Chihuahua_training)
+loss_stan(model_time_3_no_lag_chi, Chihuahua_test, Chihuahua) #12803
+
+model_time_3_lag_chi <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3) +lag2, family = poisson,  data=Chihuahua_training)
+loss_stan_lag(model_time_3_lag_chi, Chihuahua_test, Chihuahua) #15713 -> This time it decreases too much!
+
+model_gam_no_lag_chi <- gam(avg_cases ~  s(time), method="REML", family = poisson(), data = Chihuahua_training)
+loss(model_gam_no_lag_chi, Chihuahua_test, Chihuahua) #5068
+
+model_gam_lag_chi <- gam(avg_cases ~  s(time) + lag2, method="REML", family = poisson(), data = Chihuahua_training)
+loss_lag(model_gam_lag_chi, Chihuahua_test, Chihuahua) #1741: hmmm
+
+##### Tamaulipas ######
+
+Tamaulipas_training <- prepare_region(Tamaulipas)[[1]]
+Tamaulipas_test <- prepare_region(Tamaulipas)[[2]]
+
+model_time_3_no_lag_tama <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3), family = poisson,  data=Tamaulipas_training)
+loss_stan(model_time_3_no_lag_tama, Tamaulipas_test, Tamaulipas) #25276
+
+model_time_3_lag_tama <- stan_glm(avg_cases ~ time + I(time^2) + I(time^3) +lag2, family = poisson,  data=Tamaulipas_training)
+loss_stan_lag(model_time_3_lag_tama, Tamaulipas_test, Tamaulipas) #1171 -> This one is sooo good
+
+model_gam_no_lag_tama <- gam(avg_cases ~  s(time), method="REML", family = poisson(), data = Tamaulipas_training)
+loss(model_gam_no_lag_tama, Tamaulipas_test, Tamaulipas) #24222
+
+model_gam_lag_tama <- gam(avg_cases ~  s(time) + lag2, method="REML", family = poisson(), data = Tamaulipas_training)
+loss_lag(model_gam_lag_tama, Tamaulipas_test, Tamaulipas) #2903: ok, but still not good as before. Splines are officialy ko
+
 
 # AGE
 
@@ -601,6 +764,7 @@ gomp <- function(data,alpha,beta,k){
 plot(x,gomp(x,300000,188,0.03),type="l")
 points(data_daily$time,data_daily$cumulative,col=2,pch=20)
 
+?predict.nls
 gomp_model <- nls(cumulative ~ SSgompertz(time,alpha, beta, k), data=training_set)
 coeff <- coef(gomp_model)
 coeff 
