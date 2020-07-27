@@ -931,6 +931,75 @@ long_pred <- function(model, test, title, filename){
   print(plot)
 }
 
+long_pred_earth <- function(model, test, title, filename){
+  
+  df <- data.frame(test)
+  predictions <- predict(model, newdata = df[1,], type="response", interval = "pint")
+  pred_model <- predictions$fit
+  pred_mean <- pred_model
+  pred_0025 <- predictions$lwr
+  pred_0975 <- predictions$upr
+  
+  df[1, "avg_cases"] <- pred_model
+  
+  #If we are just predicting one day then we are done
+  if (dim(df)[1] == 1){
+    return()
+  }
+  
+  #Yes, I know having not one but two nested loops is bad in R
+  #But look, there will not be that many iterations, we are dealing
+  #With short predictions here
+  for (i in 2:dim(df)[1]){
+    df[i, "lag1"] <- df[i-1, "avg_cases"]
+    #Need to update each lag column
+    for (k in 2:i){
+      col <- paste("lag",k,sep="")
+      col_prev <- paste("lag",k-1, sep="")
+      df[i, col] <- df[i-1, col_prev]
+    }
+    
+    predictions <- predict(model, newdata = df[i,], type="response", interval = "pint")
+    pred_model <- predictions$fit
+    pred_mean <- c(pred_mean, pred_model)
+    pred_0025 <- c(pred_0025, predictions$lwr)
+    pred_0975 <- c(pred_0975, predictions$upr)
+    
+    df[i, "avg_cases"] <- pred_model
+    
+  }
+  
+  train_model <- predict(model, type="response", interval= "pint")
+  train_mean <- train_model$fit
+  train_0025 <- train_model$lwr
+  train_0975 <- train_model$upr
+  
+  train_df <- data.frame(cbind(time = data_daily$time[3:195],
+                               train_mean, train_0025, train_0975))
+  pred_df <- data.frame(cbind(time = df$time,
+                              pred_mean, pred_0025, pred_0975))
+  plot <- ggplot() +
+    geom_point(data = data_daily, aes(x=time, y=avg_cases)) +
+    geom_line(data = pred_df, 
+              aes(x=time,y=pred_mean),
+              col="orange",
+              lwd=0.8) +
+    geom_ribbon(data = pred_df, 
+                aes(x=time,ymin=pred_0025, ymax=pred_0975), alpha=0.2,
+                fill = "orange") +
+    geom_line(data = train_df,
+              aes(x=time, y=train_mean),
+              col="blue",
+              lwd=0.8) +
+    geom_ribbon(data = train_df,
+                aes(x=time, ymin=train_0025, ymax=train_0975), alpha=0.2,
+                fill = "blue") +
+    theme_classic() +
+    ggtitle(title)  +
+    theme(plot.title = element_text(hjust = 0.5))  
+  ggsave(filename = filename, plot = plot, device = "png")
+  print(plot)
+}
 
 time <- c(test_set$time, 200:220)
 lockdown <- c(test_set$lockdown, rep(0,21))
@@ -941,8 +1010,13 @@ lag1 <- c(test_set$lag1, rep(0,21))
 test_set_long_term <- cbind(avg_cases, time,lockdown,post_lockdown, lag1, lag2)
 
 long_pred(model_gam_b_splines, test_set_long_term, 
-          TeX("Avg cases $\\sim$ s(time, bs='bs')  + lag2"), "model_gam_b_splines_long.png")
+          TeX("GAM W/B-SPLINES"), "model_gam_b_splines_long.png")
 
 long_pred(model_gam_lockdown, test_set_long_term, 
-          TeX("Avg cases $\\sim$ s(time) +  s(post lockdown) + lag2"),"model_gam_lockdown_long.png")
+          TeX("GAM W/O B-SPLINES"),"model_gam_lockdown_long.png")
+
+long_pred_earth(model_mars, test_set_long_term,
+           TeX("MARS"), "model_mars_long.png") #125175
+
+
 
