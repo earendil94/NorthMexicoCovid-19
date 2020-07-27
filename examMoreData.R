@@ -15,7 +15,7 @@ library(latex2exp)
 data <- read.csv("MexicoCovid19Updated.csv", header = T, sep = ",")
 data$Date <- as.Date(data$Date,"%Y-%m-%d")
 population = read.csv("./population.csv",header=T)
-names = c("BAJA CALIFORNIA","CHIHUAHUA","COAHUILA","DURANGO","NUEVO LEÓN",
+names = c("BAJA CALIFORNIA","CHIHUAHUA","COAHUILA","DURANGO","NUEVO LEON",
           "SINALOA","SONORA","TAMAULIPAS","ZACATECAS")
 
 for (i in names){
@@ -114,7 +114,6 @@ days <- as.integer(length(data_daily$time))
 training_set <- data_daily[data_daily$time<days-test_days,]
 test_set <- data_daily[data_daily$time>=days-test_days,]
 
-##### Plot and Loss functions #####
 
 ##### Plot and Loss functions #####
 
@@ -286,7 +285,7 @@ loss <- function(model, test, data_daily, title, filename){
 
 
 loss_lag <- function(model, test, data_daily, title, filename){
-  df <- test
+  df <- data.frame(test)
   predictions <- predict(model, newdata = df[1,], type="response", se.fit = TRUE,
                          interval = "pint")
   pred_model <- predictions$fit
@@ -361,8 +360,8 @@ loss_lag <- function(model, test, data_daily, title, filename){
   return(ms/length(pred_mean)) 
 }
 
-loss_earth <- function(model, test, filename){
-  df <- test
+loss_earth <- function(model, test, title, filename){
+  df <- data.frame(test)
   predictions <- predict(model, newdata = df[1,], type="response", interval = "pint")
   pred_model <- predictions$fit
   ms <- mse(as.double(df[1,"avg_cases"]), pred_model)
@@ -426,7 +425,8 @@ loss_earth <- function(model, test, filename){
                 aes(x=time, ymin=train_0025, ymax=train_0975), alpha=0.2,
                 fill = "blue") +
     theme_classic() +
-    ggtitle(model$call)    
+    ggtitle(title)  +
+    theme(plot.title = element_text(hjust = 0.5))  
   ggsave(filename = filename, plot = plot, device = "png")
   print(plot)
   
@@ -490,22 +490,23 @@ loss_stan_lag(model_time_lock_3_lag_2, test_set, data_daily,
 #boh boh
 model_gam <- gam(avg_cases ~  s(time) + lag2, method="REML", family = poisson(), data = training_set)
 loss_lag(model_gam, test_set, data_daily,
-         TeX("Avg cases $\\sim$ s(time, bs='tp') +  lag 2"), "model_gam.png") #53655
+         TeX("Avg cases $\\sim$ s(time, bs='tp') +  lag2"), "model_gam.png") #53655
 
-model_gam_slag_spost_lockdown <- gam(avg_cases ~  s(time) + s(post_lockdown) + lag2, method="REML", family = poisson(), data = training_set)
-loss_lag(model_gam_slag_spost_lockdown, test_set, data_daily, 
-         TeX("Avg cases $\\sim$ s(time, bs='tp') +  s(post lockdown) + lag 2"),"model_gam_slag_spost_lockdown.png") #12028
+model_gam_lockdown <- gam(avg_cases ~  s(time) + s(post_lockdown) + lag2, method="REML", family = poisson(), data = training_set)
+loss_lag(model_gam_lockdown, test_set, data_daily, 
+         TeX("Avg cases $\\sim$ s(time) +  s(post lockdown) + lag2"),"model_gam_lockdown.png") #12028
 
 model_gam_b_splines <- gam(avg_cases ~  s(time, bs="bs", k=6) + lag2, method="REML", family = poisson(), data = training_set)
 loss_lag(model_gam_b_splines, test_set, data_daily, 
-         TeX("Avg cases $\\sim$ s(time, bs='bs')  + lag 2"), "model_gam_b_splines.png")
+         TeX("Avg cases $\\sim$ s(time, bs='bs')  + lag2"), "model_gam_b_splines.png") #2331
 
 ##### MARS #####
 
 training_set_3 <- training_set[3:dim(training_set)[1],]
-mars <- earth(avg_cases ~ time + lag2, data = training_set_3, varmod.method = "power",
+model_mars <- earth(avg_cases ~ time + lag2, data = training_set_3, varmod.method = "power",
               nfold = 5, ncross = 30)
-loss_earth(mars, test_set)
+loss_earth(model_mars, test_set,
+           TeX("Avg cases $\\sim$ time + lag2"), "model_mars.png") #125175
 
 
 
@@ -858,3 +859,90 @@ plot(test_set$time, test_set$cumulative, type= "l")
 points(test_set$time, pred, type = "l", col = "red")
 summary(model_gam)
 mse(test_set$cumulative, pred)
+
+
+
+#### long-term perdictions ####
+
+long_pred <- function(model, test, title, filename){
+  df <- data.frame(test)
+  predictions <- predict(model, newdata = df[1,], type="response", se.fit = TRUE,
+                         interval = "pint")
+  pred_model <- predictions$fit
+  pred_mean <- pred_model
+  pred_0025 <- pred_mean - 2*predictions$se.fit
+  pred_0975 <- pred_mean + 2*predictions$se.fit
+  
+  df["1", "avg_cases"] <- pred_model
+  
+  #Yes, I know having not one but two nested loops is bad in R
+  #But look, there will not be that many iterations, we are dealing
+  #With short predictions here
+  for (i in 2:dim(df)[1]){
+    df[i, "lag1"] <- df[i-1, "avg_cases"]
+    #Need to update each lag column
+    for (k in 2:i){
+      col <- paste("lag",k,sep="")
+      col_prev <- paste("lag",k-1, sep="")
+      df[i, col] <- df[i-1, col_prev]
+    }
+    
+    predictions <- predict(model, newdata = df[i,], type="response", se.fit = TRUE,
+                           interval = "se")
+    pred_model <- predictions$fit
+    pred_mean <- c(pred_mean, pred_model)
+    pred_0025 <- c(pred_0025, pred_model - 2*predictions$se.fit)
+    pred_0975 <- c(pred_0975, pred_model + 2*predictions$se.fit)
+    
+    df[i, "avg_cases"] <- pred_model
+    
+  }
+  
+  train_model <- predict(model, type="response", se.fit=TRUE)
+  train_mean <- train_model$fit
+  train_0025 <- train_model$fit - 2*train_model$se.fit
+  train_0975 <- train_model$fit + 2*train_model$se.fit
+  
+  train_df <- data.frame(cbind(time = data_daily$time[3:195],
+                               train_mean, train_0025, train_0975))
+  pred_df <- data.frame(cbind(time = df$time,
+                              pred_mean, pred_0025, pred_0975))
+  plot <- ggplot() +
+    geom_point(data = data_daily, aes(x=time, y=avg_cases)) +
+    geom_line(data = pred_df, 
+              aes(x=time,y=pred_mean),
+              col="orange",
+              lwd=0.8) +
+    geom_ribbon(data = pred_df, 
+                aes(x=time,ymin=pred_0025, ymax=pred_0975), alpha=0.2,
+                fill = "orange") +
+    geom_line(data = train_df,
+              aes(x=time, y=train_mean),
+              col="blue",
+              lwd=0.8) +
+    geom_ribbon(data = train_df,
+                aes(x=time, ymin=train_0025, ymax=train_0975), alpha=0.2,
+                fill = "blue") +
+    theme_classic() +
+    ggtitle(title)  +
+    theme(plot.title = element_text(hjust = 0.5))  
+  ggsave(filename = filename, plot = plot, device = "png")
+  
+  print(plot)
+}
+
+
+time <- c(test_set$time, 200:220)
+lockdown <- c(test_set$lockdown, rep(0,21))
+post_lockdown <- c(test_set$post_lockdown, 49:69)
+avg_cases <-  c(test_set$avg_cases, rep(0,21))
+lag2 <- c(test_set$lag2, rep(0,21))
+lag1 <- c(test_set$lag1, rep(0,21))
+test_set_long_term <- cbind(avg_cases, time,lockdown,post_lockdown, lag1, lag2)
+
+long_pred(model_gam_b_splines, test_set_long_term, 
+          TeX("Avg cases $\\sim$ s(time, bs='bs')  + lag2"), "model_gam_b_splines_long.png")
+
+long_pred(model_gam_lockdown, test_set_long_term, 
+          TeX("Avg cases $\\sim$ s(time) +  s(post lockdown) + lag2"),"model_gam_lockdown_long.png")
+
